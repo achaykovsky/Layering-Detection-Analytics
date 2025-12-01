@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "layering-detection-analytics"
+version = "0.1.0"
+description = "Layering detection analytics for intraday market transactions."
+authors = ["Annac <achaykovsky.career@gmail.com>"]
+readme = "README.md"
+packages = [{ include = "layering_detection", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.6.0,<1.7.0"]
+build-backend = "poetry.core.masonry.api"
+
+
