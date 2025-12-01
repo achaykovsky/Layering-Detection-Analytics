@@ -24,29 +24,19 @@ def write_detection_logs(
     """
     Write detection logs for each suspicious sequence to a CSV file.
 
-    The log schema (one row per sequence) is:
+    The log schema (one row per sequence) is, per the assignment logging section:
     - account_id
     - product_id
-    - window_start_timestamp  (sequence start_timestamp, ISO)
-    - detected_timestamp      (sequence end_timestamp, ISO)
-    - duration_seconds        (float seconds between start and end)
-    - num_cancelled_orders
-    - total_buy_qty
-    - total_sell_qty
     - order_timestamps        (semicolon-separated ISO timestamps)
+    - duration_seconds        (float seconds between start and end)
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
     fieldnames = [
         "account_id",
         "product_id",
-        "window_start_timestamp",
-        "detected_timestamp",
-        "duration_seconds",
-        "num_cancelled_orders",
-        "total_buy_qty",
-        "total_sell_qty",
         "order_timestamps",
+        "duration_seconds",
     ]
 
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -66,13 +56,8 @@ def write_detection_logs(
                 {
                     "account_id": account_id,
                     "product_id": product_id,
-                    "window_start_timestamp": seq.start_timestamp.isoformat(),
-                    "detected_timestamp": seq.end_timestamp.isoformat(),
-                    "duration_seconds": f"{duration_seconds:.3f}",
-                    "num_cancelled_orders": seq.num_cancelled_orders,
-                    "total_buy_qty": seq.total_buy_qty,
-                    "total_sell_qty": seq.total_sell_qty,
                     "order_timestamps": order_timestamps,
+                    "duration_seconds": f"{duration_seconds:.3f}",
                 }
             )
 
