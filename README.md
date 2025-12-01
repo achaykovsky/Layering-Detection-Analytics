@@ -3,7 +3,11 @@
 Python-based batch analytics that scans intraday transactions data (`input/transactions.csv`) to detect simplified layering manipulation patterns and produces:
 
 - `output/suspicious_accounts.csv` – one row per detected suspicious layering sequence.
-- `logs/detections.csv` – per-sequence detection logs (account, product, sequence of order timestamps, and duration in seconds).
+- `logs/detections.csv` – per-sequence detection logs (account, product, sequence of order timestamps, and duration in seconds), with columns:
+  - `account_id`
+  - `product_id`
+  - `order_timestamps`
+  - `duration_seconds`
 
 The implementation follows the PRD in `assignment` and the specs in `specs/`.
 
