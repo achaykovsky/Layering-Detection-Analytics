@@ -42,13 +42,8 @@ class TestRunnerPipeline:
         assert log_fieldnames == [
             "account_id",
             "product_id",
-            "window_start_timestamp",
-            "detected_timestamp",
-            "duration_seconds",
-            "num_cancelled_orders",
-            "total_buy_qty",
-            "total_sell_qty",
             "order_timestamps",
+            "duration_seconds",
         ]
         assert len(log_rows) == 2
 
