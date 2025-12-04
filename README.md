@@ -144,10 +144,10 @@ This runs all unit and integration tests under `tests/`.
 
 ## Running via Docker
 
-Build the Docker image from the project root:
+Build the Docker image from the project root with version tags:
 
 ```powershell
-docker build -t layering-detection .
+docker build -t layering-detection:0.1.0 -t layering-detection:latest .
 ```
 
 Run the container, mounting `input/`, `output/`, and `logs/` from the host:
@@ -157,7 +157,17 @@ docker run --rm `
   -v ${PWD}\input:/app/input `
   -v ${PWD}\output:/app/output `
   -v ${PWD}\logs:/app/logs `
-  layering-detection
+  layering-detection:0.1.0
+```
+
+Or use the `latest` tag:
+
+```powershell
+docker run --rm `
+  -v ${PWD}\input:/app/input `
+  -v ${PWD}\output:/app/output `
+  -v ${PWD}\logs:/app/logs `
+  layering-detection:latest
 ```
 
 Inside the container, the default command:
