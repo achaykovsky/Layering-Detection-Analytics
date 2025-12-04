@@ -31,6 +31,57 @@ The implementation follows the PRD in `assignment` and the specs in `specs/`.
 
 ---
 
+## Architecture
+
+The system follows a layered architecture separating domain models, I/O operations, business logic, and orchestration:
+
+```mermaid
+graph TD
+    A[CSV Input] -->|read_transactions| B[TransactionEvent List]
+    B -->|detect_suspicious_sequences| C[SuspiciousSequence List]
+    C -->|write_suspicious_accounts| D[suspicious_accounts.csv]
+    C -->|write_detection_logs| E[detections.csv]
+    
+    subgraph "Domain Layer"
+        F[models.py<br/>TransactionEvent<br/>SuspiciousSequence]
+    end
+    
+    subgraph "I/O Layer"
+        G[io.py<br/>CSV Read/Write]
+        H[logging_utils.py<br/>Detection Logs]
+    end
+    
+    subgraph "Business Logic"
+        I[detector.py<br/>Pattern Detection]
+    end
+    
+    subgraph "Orchestration"
+        J[runner.py<br/>run_pipeline]
+    end
+    
+    B --> F
+    C --> F
+    G --> F
+    H --> F
+    I --> F
+    J --> G
+    J --> I
+    J --> H
+```
+
+**Data Flow:**
+1. **Input**: `io.py` reads CSV and parses into `TransactionEvent` domain objects
+2. **Detection**: `detector.py` groups events by `(account_id, product_id)` and detects layering patterns
+3. **Output**: Results written to CSV files via `io.py` (suspicious accounts) and `logging_utils.py` (detection logs)
+
+**Design Principles:**
+- **Separation of Concerns**: Domain models are framework-agnostic, I/O is isolated from business logic
+- **Pure Functions**: Detection logic has no side effects, making it easily testable
+- **Type Safety**: Strict type hints throughout using PEP-484
+- **Minimal Dependencies**: Standard library only (no external frameworks)
+
+---
+
 ## Requirements
 
 - Python **3.11** (recommended via `py` launcher on Windows).
