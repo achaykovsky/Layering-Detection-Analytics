@@ -6,12 +6,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install minimal build tools if needed (most deps are stdlib-only here)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy project files into the image
-COPY . /app
+# Copy package metadata and source code (required together for pip install)
+# README.md is needed because pyproject.toml references it for package metadata
+COPY pyproject.toml README.md /app/
+COPY src/ /app/src/
 
 # Install the package
 RUN pip install --no-cache-dir .
@@ -19,9 +17,6 @@ RUN pip install --no-cache-dir .
 # Create a non-root user and switch to it
 RUN useradd --create-home appuser
 USER appuser
-
-# Default locations for input/output/logs inside the container
-WORKDIR /app
 
 # By default, expect:
 # - input/transactions.csv mounted under /app/input
