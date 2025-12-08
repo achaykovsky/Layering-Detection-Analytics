@@ -1,0 +1,83 @@
+
+# **PRD – Layering Detection Analytics**
+
+### **Purpose**
+
+This feature aims to identify potential layering manipulations in market order data.
+Layering is a deceptive trading tactic where a trader places multiple non-bona-fide orders (fake buy/sell orders) to create a false impression of market demand or supply, then quickly cancels them after executing a profitable opposite-side trade.
+
+---
+
+What is Wash Trading
+Wash Trading is a form of market manipulation where a trader (or related accounts) repeatedly buys and sells the same instrument to create a false appearance of activity or liquidity.
+It does not change the trader’s net position but misleads others about real market demand.
+
+### **Data Input**
+
+You will receive a CSV file named `transactions.csv` containing intraday trade and order events.
+
+**Columns**
+
+| Column     | Description                                     |
+| ---------- | ----------------------------------------------- |
+| timestamp  | ISO datetime of event                           |
+| account_id | Trader or account identifier                    |
+| product_id | Symbol or instrument traded                     |
+| side       | BUY or SELL                                     |
+| price      | Order or trade price                            |
+| quantity   | Order or trade size                             |
+| event_type | ORDER_PLACED / ORDER_CANCELLED / TRADE_EXECUTED |
+
+---
+
+### **Detection Logic (Simplified)**
+
+A suspicious layering sequence occurs when:
+
+1. A trader places ≥3 orders on one side (BUY or SELL) within 10 seconds.
+2. These orders are cancelled before execution within 5 seconds after placement.
+3. The same trader then executes a trade on the opposite side (SELL if prior was BUY, and vice versa) within 2 seconds after the last cancellation.
+
+If all 3 conditions are met, flag the account_id and the product_id as suspicious.
+
+---
+
+A suspicious wash sequence occurs when:
+
+The same account executes ≥3 BUY and ≥3 SELL trades of the same product within a 30-minute window.
+
+There is a high alternation pattern (≥60% of trades switch sides) in that 30-minute window.
+
+The total traded volume in that window is ≥10,000 shares.
+
+(Optional bonus) - the price of the product changes by ≥1% during that window (indicating possible manipulation of the price trend).
+
+If these conditions are met, flag the account_id and the product_id as suspicious.
+----
+
+### **Output**
+
+Generate a CSV file named `suspicious_accounts.csv` with the following columns:
+
+| Column               | Description                                   |
+| -------------------- | --------------------------------------------- |
+| account_id           | Suspicious account                            |
+| product_id           | Product where activity was detected           |
+| total_buy_qty        | Total BUY quantity during the pattern window  |
+| total_sell_qty       | Total SELL quantity during the pattern window |
+| num_cancelled_orders | Count of cancelled orders in the sequence     |
+| detected_timestamp   | Timestamp of detection                        |
+
+---
+
+### **Logging**
+
+Write logs for each suspicious detection event with:
+• Account ID
+• Product ID
+• Sequence of order timestamps
+• Duration of sequence (seconds)
+
+Store logs in a local `logs/` directory.
+
+
