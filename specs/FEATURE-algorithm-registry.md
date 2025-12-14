@@ -298,3 +298,4 @@ algorithms = AlgorithmRegistry.get_all(enabled=enabled_algorithms)
 3. **Algorithm Metadata**: Version, author, configuration schema
 4. **Dependency Management**: Algorithm dependencies and ordering
 5. **Hot Reloading**: Reload algorithms without restart (development)
+
