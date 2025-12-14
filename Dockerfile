@@ -21,7 +21,7 @@ USER appuser
 # By default, expect:
 # - input/transactions.csv mounted under /app/input
 # - output/ and logs/ directories mounted under /app/output and /app/logs
-CMD ["python", "-c", "from pathlib import Path; from layering_detection.runner import run_pipeline; run_pipeline(Path('input/transactions.csv'), Path('output'), Path('logs'))"]
+CMD ["python", "-c", "from pathlib import Path; from layering_detection.orchestrator import run_pipeline; run_pipeline(Path('input/transactions.csv'), Path('output'), Path('logs'))"]
 
 
 
