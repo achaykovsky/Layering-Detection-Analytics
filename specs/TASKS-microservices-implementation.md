@@ -548,20 +548,21 @@ Create basic FastAPI application structure for Orchestrator Service with health 
 **Type**: Feature  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
-**Dependencies**: Task 4.1
+**Dependencies**: Task 4.1  
+**Status**: ✅ Complete
 
 **Description**:
 Implement CSV reading logic to read input CSV file and parse TransactionEvent objects. Reuse existing CSV reading utilities.
 
 **Acceptance Criteria**:
-- [ ] Create `read_input_csv(path: str) -> List[TransactionEvent]` function
-- [ ] Read CSV file from mounted volume (`/app/input/`)
-- [ ] Parse CSV rows to TransactionEvent domain models
-- [ ] Reuse existing CSV reading utilities from `layering_detection.io`
-- [ ] Handle file read errors gracefully
-- [ ] Validate CSV format and data
-- [ ] Log file reading completion
-- [ ] Unit tests for CSV reading (valid file, invalid file, missing file)
+- [x] Create `read_input_csv(path: str) -> List[TransactionEvent]` function
+- [x] Read CSV file from mounted volume (`/app/input/`)
+- [x] Parse CSV rows to TransactionEvent domain models
+- [x] Reuse existing CSV reading utilities from `layering_detection.io`
+- [x] Handle file read errors gracefully
+- [x] Validate CSV format and data
+- [x] Log file reading completion
+- [x] Unit tests for CSV reading (valid file, invalid file, missing file)
 
 **Files to Create**:
 - `services/orchestrator-service/reader.py`
