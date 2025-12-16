@@ -1,0 +1,123 @@
+# Layering Detection Service
+
+Microservice for detecting suspicious layering patterns in transaction data.
+
+## Overview
+
+The Layering Detection Service is a FastAPI-based microservice that detects suspicious layering manipulation patterns. Layering is a market manipulation technique where traders place multiple orders on one side to create false market signals, cancel them, then execute trades on the opposite side.
+
+## Features
+
+- **Health Check Endpoint**: `GET /health` - Returns service health status
+- **Detection Endpoint**: `POST /detect` - Detects suspicious layering sequences (to be implemented in Task 2.2)
+- **Structured Logging**: Includes request_id support for distributed tracing
+- **Docker-Ready**: Configured for containerized deployment
+
+## API Endpoints
+
+### `GET /health`
+
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "layering-service"
+}
+```
+
+### `GET /`
+
+Root endpoint with service information.
+
+**Response:**
+```json
+{
+  "service": "layering-service",
+  "version": "1.0.0",
+  "status": "running"
+}
+```
+
+## Configuration
+
+The service uses environment variables for configuration:
+
+- `PORT`: Service port (default: 8001)
+- `LOG_LEVEL`: Logging level (default: INFO)
+- `LOG_FORMAT`: Log format - "JSON" for JSON logs, otherwise human-readable (default: human-readable)
+
+## Running Locally
+
+### Prerequisites
+
+- Python 3.11+
+- pip or poetry
+
+### Installation
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Install the `layering_detection` package from the parent directory:
+```bash
+cd ../..
+pip install -e .
+```
+
+### Running the Service
+
+```bash
+# Using uvicorn directly
+uvicorn main:app --port 8001
+
+# Or run main.py directly
+python main.py
+```
+
+The service will start on port 8001 (or the port specified in the `PORT` environment variable).
+
+## Docker
+
+The service is designed to run in Docker. See the parent project's `docker-compose.yml` for orchestration.
+
+## Architecture
+
+- **Framework**: FastAPI
+- **ASGI Server**: Uvicorn
+- **Logging**: Shared logging utilities with request_id support
+- **Configuration**: Shared configuration utilities (12-factor app)
+
+## Dependencies
+
+- `fastapi`: Web framework
+- `uvicorn`: ASGI server
+- `layering_detection`: Core detection algorithms (from parent project)
+- `services.shared`: Shared utilities (API models, logging, config)
+
+## Development
+
+### Project Structure
+
+```
+layering-service/
+├── main.py              # FastAPI application
+├── requirements.txt     # Python dependencies
+└── README.md           # This file
+```
+
+## Related Services
+
+- **Orchestrator Service**: Coordinates the detection pipeline
+- **Wash Trading Service**: Detects wash trading patterns
+- **Aggregator Service**: Aggregates results from all detection services
+
+## Notes
+
+- The service uses shared logging utilities that include request_id support for distributed tracing
+- All configuration follows 12-factor app principles (environment variables only)
+- The service is stateless and can be horizontally scaled
+

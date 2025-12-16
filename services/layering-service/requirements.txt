@@ -1,0 +1,10 @@
+# Layering Detection Service Dependencies
+# Install with: pip install -r requirements.txt
+
+# FastAPI and ASGI server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Shared utilities (installed from parent project)
+# Note: In Docker, the layering_detection package will be installed via pip install .
+
