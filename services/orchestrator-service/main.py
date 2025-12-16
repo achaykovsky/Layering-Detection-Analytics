@@ -16,7 +16,8 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from services.shared.config import get_port
 from services.shared.logging import setup_logging
@@ -34,6 +35,41 @@ get_aggregator_service_url = orchestrator_config.get_aggregator_service_url
 get_max_retries = orchestrator_config.get_max_retries
 get_timeout_seconds = orchestrator_config.get_timeout_seconds
 get_input_dir = orchestrator_config.get_input_dir
+
+# Import orchestrator modules
+reader_path = Path(__file__).parent / "reader.py"
+spec = importlib.util.spec_from_file_location("orchestrator_reader", reader_path)
+orchestrator_reader = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(orchestrator_reader)
+read_input_csv = orchestrator_reader.read_input_csv
+
+utils_path = Path(__file__).parent / "utils.py"
+spec = importlib.util.spec_from_file_location("orchestrator_utils", utils_path)
+orchestrator_utils = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(orchestrator_utils)
+generate_request_id = orchestrator_utils.generate_request_id
+hash_events = orchestrator_utils.hash_events
+
+orchestrator_path = Path(__file__).parent / "orchestrator.py"
+spec = importlib.util.spec_from_file_location("orchestrator", orchestrator_path)
+orchestrator_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(orchestrator_module)
+call_all_algorithm_services = orchestrator_module.call_all_algorithm_services
+EXPECTED_SERVICES = orchestrator_module.EXPECTED_SERVICES
+
+validation_path = Path(__file__).parent / "validation.py"
+spec = importlib.util.spec_from_file_location("orchestrator_validation", validation_path)
+orchestrator_validation = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(orchestrator_validation)
+validate_all_completed = orchestrator_validation.validate_all_completed
+
+client_path = Path(__file__).parent / "client.py"
+spec = importlib.util.spec_from_file_location("orchestrator_client", client_path)
+orchestrator_client = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(orchestrator_client)
+call_aggregator_service = orchestrator_client.call_aggregator_service
+
+from services.shared.api_models import AggregateRequest, AggregateResponse, AlgorithmResponse
 
 # Setup logging
 logger = setup_logging("orchestrator-service", log_level="INFO")
