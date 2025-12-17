@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  # Layering Detection Service
+  layering-service:
+    build:
+      context: .
+      dockerfile: services/layering-service/Dockerfile
+    container_name: layering-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - LOG_LEVEL=INFO
+    networks:
+      - layering-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Wash Trading Detection Service
+  wash-trading-service:
+    build:
+      context: .
+      dockerfile: services/wash-trading-service/Dockerfile
+    container_name: wash-trading-service
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - LOG_LEVEL=INFO
+    networks:
+      - layering-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Aggregator Service
+  aggregator-service:
+    build:
+      context: .
+      dockerfile: services/aggregator-service/Dockerfile
+    container_name: aggregator-service
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+    environment:
+      - PORT=8003
+      - OUTPUT_DIR=/app/output
+      - LOGS_DIR=/app/logs
+      - VALIDATION_STRICT=true
+      - ALLOW_PARTIAL_RESULTS=false
+      - LOG_LEVEL=INFO
+    networks:
+      - layering-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Orchestrator Service (depends on algorithm services)
+  orchestrator-service:
+    build:
+      context: .
+      dockerfile: services/orchestrator-service/Dockerfile
+    container_name: orchestrator-service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./input:/app/input:ro
+    environment:
+      - PORT=8000
+      - INPUT_DIR=/app/input
+      - LAYERING_SERVICE_URL=http://layering-service:8001
+      - WASH_TRADING_SERVICE_URL=http://wash-trading-service:8002
+      - AGGREGATOR_SERVICE_URL=http://aggregator-service:8003
+      - MAX_RETRIES=3
+      - ALGORITHM_TIMEOUT_SECONDS=30
+      - LOG_LEVEL=INFO
+    networks:
+      - layering-network
+    depends_on:
+      layering-service:
+        condition: service_healthy
+      wash-trading-service:
+        condition: service_healthy
+      aggregator-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  layering-network:
+    driver: bridge
+    name: layering-network
+
