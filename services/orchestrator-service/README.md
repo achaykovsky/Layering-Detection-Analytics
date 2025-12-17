@@ -122,6 +122,55 @@ The service will start on port 8000 (or the port specified in the `PORT` environ
 
 The service is designed to run in Docker. See the parent project's `docker-compose.yml` for orchestration.
 
+### Building the Docker Image
+
+Build from the project root directory:
+
+```bash
+docker build -f services/orchestrator-service/Dockerfile -t orchestrator-service .
+```
+
+### Running the Container
+
+```bash
+# Run in detached mode
+docker run --rm -d -p 8000:8000 --name orchestrator-test orchestrator-service
+
+# Verify health endpoint (PowerShell)
+Start-Sleep -Seconds 3
+curl http://localhost:8000/health
+
+# Check logs
+docker logs orchestrator-test
+
+# Stop and remove container
+docker stop orchestrator-test
+```
+
+### Testing the Container
+
+Use the provided test script (PowerShell):
+
+```powershell
+.\services\orchestrator-service\test-container.ps1
+```
+
+Or manually verify:
+
+```bash
+# Start container
+docker run --rm -d -p 8000:8000 --name orchestrator-test orchestrator-service
+
+# Wait for startup, then test health endpoint
+Start-Sleep -Seconds 3
+curl http://localhost:8000/health
+
+# Expected response: {"status":"healthy","service":"orchestrator-service"}
+
+# Cleanup
+docker stop orchestrator-test
+```
+
 ## Architecture
 
 - **Framework**: FastAPI
