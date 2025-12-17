@@ -1,6 +1,21 @@
 .venv/
 __pycache__/
 *.pyc
+.cursor/
+.vscode/
+.pytest_cache/
+.coverage
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+sync-agents.ps1
+/output/
+/logs/
+/tests/_pycache/
+/tests/benchmark/
+/benchmarks/
 
 
 
