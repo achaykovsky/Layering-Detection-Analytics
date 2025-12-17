@@ -84,6 +84,55 @@ The service will start on port 8002 (or the port specified in the `PORT` environ
 
 The service is designed to run in Docker. See the parent project's `docker-compose.yml` for orchestration.
 
+### Building the Docker Image
+
+Build from the project root directory:
+
+```bash
+docker build -f services/wash-trading-service/Dockerfile -t wash-trading-service .
+```
+
+### Running the Container
+
+```bash
+# Run in detached mode
+docker run --rm -d -p 8002:8002 --name wash-trading-test wash-trading-service
+
+# Verify health endpoint (PowerShell)
+Start-Sleep -Seconds 3
+curl http://localhost:8002/health
+
+# Check logs
+docker logs wash-trading-test
+
+# Stop and remove container
+docker stop wash-trading-test
+```
+
+### Testing the Container
+
+Use the provided test script (PowerShell):
+
+```powershell
+.\services\wash-trading-service\test-container.ps1
+```
+
+Or manually verify:
+
+```bash
+# Start container
+docker run --rm -d -p 8002:8002 --name wash-trading-test wash-trading-service
+
+# Wait for startup, then test health endpoint
+Start-Sleep -Seconds 3
+curl http://localhost:8002/health
+
+# Expected response: {"status":"healthy","service":"wash-trading-service"}
+
+# Cleanup
+docker stop wash-trading-test
+```
+
 ## Architecture
 
 - **Framework**: FastAPI
