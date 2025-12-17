@@ -126,6 +126,55 @@ The service will start on port 8003 (or the port specified in the `PORT` environ
 
 The service is designed to run in Docker. See the parent project's `docker-compose.yml` for orchestration.
 
+### Building the Docker Image
+
+Build from the project root directory:
+
+```bash
+docker build -f services/aggregator-service/Dockerfile -t aggregator-service .
+```
+
+### Running the Container
+
+```bash
+# Run in detached mode
+docker run --rm -d -p 8003:8003 --name aggregator-test aggregator-service
+
+# Verify health endpoint (PowerShell)
+Start-Sleep -Seconds 3
+curl http://localhost:8003/health
+
+# Check logs
+docker logs aggregator-test
+
+# Stop and remove container
+docker stop aggregator-test
+```
+
+### Testing the Container
+
+Use the provided test script (PowerShell):
+
+```powershell
+.\services\aggregator-service\test-container.ps1
+```
+
+Or manually verify:
+
+```bash
+# Start container
+docker run --rm -d -p 8003:8003 --name aggregator-test aggregator-service
+
+# Wait for startup, then test health endpoint
+Start-Sleep -Seconds 3
+curl http://localhost:8003/health
+
+# Expected response: {"status":"healthy","service":"aggregator-service"}
+
+# Cleanup
+docker stop aggregator-test
+```
+
 ## Architecture
 
 - **Framework**: FastAPI
