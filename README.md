@@ -62,14 +62,14 @@ CSV Input → Orchestrator → [Algorithm Services (parallel)] → Aggregator �
 
 ```mermaid
 graph TD
-    A[CSV Input<br/>transactions.csv] -->|read| B[Orchestrator Service<br/>:8000]
-    B -->|POST /detect<br/>request_id + events| C[Layering Service<br/>:8001]
-    B -->|POST /detect<br/>request_id + events| D[Wash Trading Service<br/>:8002]
-    C -->|SuspiciousSequence[]| B
-    D -->|SuspiciousSequence[]| B
-    B -->|POST /aggregate<br/>all results + metadata| E[Aggregator Service<br/>:8003]
-    E -->|write| F[suspicious_accounts.csv]
-    E -->|write| G[detections.csv]
+    A["CSV Input<br/>transactions.csv"] -->|read| B["Orchestrator Service<br/>:8000"]
+    B -->|"POST /detect"| C["Layering Service<br/>:8001"]
+    B -->|"POST /detect"| D["Wash Trading Service<br/>:8002"]
+    C -->|results| B
+    D -->|results| B
+    B -->|"POST /aggregate"| E["Aggregator Service<br/>:8003"]
+    E -->|write| F["suspicious_accounts.csv"]
+    E -->|write| G["detections.csv"]
     
     subgraph "Docker Compose Network"
         B
