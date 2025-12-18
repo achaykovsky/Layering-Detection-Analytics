@@ -1,8 +1,8 @@
-## Layering Detection Analytics
+# Layering Detection Analytics
 
-Python-based batch analytics that scans intraday transactions data (`input/transactions.csv`) to detect simplified layering manipulation patterns and produces:
+Python-based batch analytics that scans intraday transactions data (`input/transactions.csv`) to detect suspicious manipulation patterns (layering and wash trading) and produces:
 
-- `output/suspicious_accounts.csv` – one row per detected suspicious layering sequence.
+- `output/suspicious_accounts.csv` – one row per detected suspicious sequence (see [Output Format](#output-format) below).
 - `logs/detections.csv` – per-sequence detection logs (account, product, sequence of order timestamps, and duration in seconds), with columns:
   - `account_id`
   - `product_id`
@@ -13,86 +13,255 @@ The implementation follows the PRD in `assignment` and the specs in `specs/`.
 
 ---
 
-## Project structure
+## Quick Start (5 minutes)
 
-- `src/layering_detection/`
-  - `models.py` – domain models (`TransactionEvent`, `SuspiciousSequence`).
-  - `io.py` – CSV reading (`transactions.csv`) and writing (`suspicious_accounts.csv`).
-  - `detector.py` – core layering detection logic and aggregation.
-  - `logging_utils.py` – writes detection log CSV (`logs/detections.csv`).
-  - `security_utils.py` – CSV sanitization and optional account pseudonymization helpers.
-  - `runner.py` – `run_pipeline(...)` orchestration (read → detect → write outputs/logs).
-- `input/transactions.csv` – sample input file provided in the assignment.
-- `output/` – output directory (created at runtime).
-- `logs/` – logs directory (created at runtime).
-- `tests/` – pytest-based unit and integration tests.
-- `Dockerfile` – container image definition.
-- `specs/` – derived requirements/feature/data/deployment specs.
+### Option 1: Microservices (Recommended for Production)
+
+**Prerequisites:** Docker and Docker Compose
+
+```powershell
+# Start all services
+docker-compose up --build
+
+# In another terminal, trigger pipeline
+curl -X POST http://localhost:8000/orchestrate -H "Content-Type: application/json" -d '{"input_file": "input/transactions.csv"}'
+
+# Check outputs
+ls output/suspicious_accounts.csv
+ls logs/detections.csv
+
+# Stop services
+docker-compose down
+```
+
+### Option 2: Monolithic (Development/Testing)
+
+**Prerequisites:** Python 3.11+
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install .
+python main.py
+```
 
 ---
 
 ## Architecture
 
-The system follows a layered architecture separating domain models, I/O operations, business logic, and orchestration:
+The system uses a **microservices architecture** with independent services communicating via REST APIs. Each service runs in its own Docker container, enabling independent scaling, deployment, and fault isolation.
+
+### System Flow
+
+```
+CSV Input → Orchestrator → [Algorithm Services (parallel)] → Aggregator → Output
+```
+
+### Architecture Diagram
 
 ```mermaid
 graph TD
-    A[CSV Input] -->|read_transactions| B[TransactionEvent List]
-    B -->|detect_suspicious_sequences| C[SuspiciousSequence List]
-    C -->|write_suspicious_accounts| D[suspicious_accounts.csv]
-    C -->|write_detection_logs| E[detections.csv]
+    A[CSV Input<br/>transactions.csv] -->|read| B[Orchestrator Service<br/>:8000]
+    B -->|POST /detect<br/>request_id + events| C[Layering Service<br/>:8001]
+    B -->|POST /detect<br/>request_id + events| D[Wash Trading Service<br/>:8002]
+    C -->|SuspiciousSequence[]| B
+    D -->|SuspiciousSequence[]| B
+    B -->|POST /aggregate<br/>all results + metadata| E[Aggregator Service<br/>:8003]
+    E -->|write| F[suspicious_accounts.csv]
+    E -->|write| G[detections.csv]
     
-    subgraph "Domain Layer"
-        F[models.py<br/>TransactionEvent<br/>SuspiciousSequence]
+    subgraph "Docker Compose Network"
+        B
+        C
+        D
+        E
     end
     
-    subgraph "I/O Layer"
-        G[io.py<br/>CSV Read/Write]
-        H[logging_utils.py<br/>Detection Logs]
+    subgraph "Algorithm Services"
+        C
+        D
     end
     
-    subgraph "Business Logic"
-        I[detector.py<br/>Pattern Detection]
-    end
-    
-    subgraph "Orchestration"
-        J[runner.py<br/>run_pipeline]
-    end
-    
-    B --> F
-    C --> F
-    G --> F
-    H --> F
-    I --> F
-    J --> G
-    J --> I
-    J --> H
+    style C fill:#e1f5ff
+    style D fill:#e1f5ff
+    style B fill:#fff4e1
+    style E fill:#e8f5e9
 ```
 
-**Data Flow:**
-1. **Input**: `io.py` reads CSV and parses into `TransactionEvent` domain objects
-2. **Detection**: `detector.py` groups events by `(account_id, product_id)` and detects layering patterns
-3. **Output**: Results written to CSV files via `io.py` (suspicious accounts) and `logging_utils.py` (detection logs)
+### Services
 
-**Design Principles:**
-- **Separation of Concerns**: Domain models are framework-agnostic, I/O is isolated from business logic
-- **Pure Functions**: Detection logic has no side effects, making it easily testable
-- **Type Safety**: Strict type hints throughout using PEP-484
-- **Minimal Dependencies**: Standard library only (no external frameworks)
+**1. Orchestrator Service** (`services/orchestrator-service/`)
+- **Port:** 8000
+- **Responsibilities:** Read CSV, generate request IDs, call algorithm services in parallel, handle retries, forward to aggregator
+- **Endpoints:** `POST /orchestrate`, `GET /health`
+- **Features:** Retry logic with exponential backoff, fault isolation, completion tracking
+
+**2. Layering Service** (`services/layering-service/`)
+- **Port:** 8001
+- **Responsibilities:** Run layering detection algorithm
+- **Endpoints:** `POST /detect`, `GET /health`
+- **Features:** Idempotent operations, result caching
+
+**3. Wash Trading Service** (`services/wash-trading-service/`)
+- **Port:** 8002
+- **Responsibilities:** Run wash trading detection algorithm
+- **Endpoints:** `POST /detect`, `GET /health`
+- **Features:** Idempotent operations, result caching
+
+**4. Aggregator Service** (`services/aggregator-service/`)
+- **Port:** 8003
+- **Responsibilities:** Validate completion, merge results, write CSV files
+- **Endpoints:** `POST /aggregate`, `GET /health`
+- **Features:** Completion validation, result deduplication, CSV writing
+
+### Design Principles
+
+- **Separation of Concerns:** Each service has a single responsibility
+- **Fault Isolation:** Service failures don't cascade
+- **Independent Scaling:** Scale algorithm services independently based on load
+- **Parallel Execution:** Algorithm services run concurrently
+- **Idempotency:** Retries don't cause duplicate processing
+- **Type Safety:** Strict type hints with Pydantic validation at service boundaries
+
+---
+
+## Migration from Monolith
+
+The system migrated from a monolithic architecture to microservices to address scalability, fault isolation, and independent deployment needs.
+
+### Migration Status
+
+- ✅ Microservices architecture implemented
+- ✅ All services containerized
+- ✅ Docker Compose orchestration configured
+- ✅ Backward compatibility maintained (monolithic mode still available)
+
+### When to Use Each Architecture
+
+**Microservices (Recommended):**
+- Production deployments requiring scalability
+- Independent algorithm scaling needs
+- Fault isolation requirements
+- High availability requirements
+- Parallel algorithm execution
+
+**Monolithic (Still Available):**
+- Development/testing (simpler setup)
+- Small-scale deployments
+- Single-machine execution
+- Rapid prototyping
+
+### Performance Comparison
+
+| Aspect | Monolithic | Microservices |
+|--------|-----------|---------------|
+| Network Latency | Zero (in-process) | ~10-50ms per service call |
+| Execution | Sequential (sum of times) | Parallel (max of times) |
+| Scaling | Single point | Independent per service |
+| Fault Isolation | None (single failure point) | Per-service isolation |
+| **Net Benefit** | Simpler, faster for small workloads | Better for production, parallelization typically outweighs network overhead |
+
+### Migration Path
+
+The migration was completed in phases:
+
+1. **Phase 1:** Extracted algorithm services (Layering, Wash Trading)
+2. **Phase 2:** Implemented orchestrator service with retry logic
+3. **Phase 3:** Implemented aggregator service for result validation and merging
+4. **Phase 4:** Configured Docker Compose for full pipeline orchestration
+
+**Backward Compatibility:** The monolithic `main.py` CLI remains functional, calling `layering_detection.orchestrator.run_pipeline()` directly. Both architectures produce identical output formats.
+
+---
+
+## Project Structure
+
+```
+Layering-Detection-Analytics/
+├── services/                    # Microservices
+│   ├── orchestrator-service/   # Pipeline coordination
+│   ├── layering-service/       # Layering detection algorithm
+│   ├── wash-trading-service/   # Wash trading detection algorithm
+│   ├── aggregator-service/     # Result aggregation and CSV writing
+│   └── shared/                 # Shared utilities (API models, converters, logging)
+├── src/layering_detection/      # Core domain models and algorithms
+│   ├── models.py               # Domain models (TransactionEvent, SuspiciousSequence)
+│   ├── algorithms/             # Detection algorithms
+│   ├── detectors/              # Algorithm implementations
+│   └── utils/                  # Utilities (I/O, logging, security)
+├── input/transactions.csv      # Sample input file
+├── output/                     # Output directory (created at runtime)
+├── logs/                       # Logs directory (created at runtime)
+├── tests/                      # pytest-based unit, integration, and e2e tests
+├── specs/                      # Architecture and feature specifications
+├── docker-compose.yml          # Docker Compose configuration
+├── main.py                     # Monolithic CLI entry point (backward compatibility)
+└── pyproject.toml              # Python package configuration
+```
 
 ---
 
 ## Requirements
 
-- Python **3.11** (recommended via `py` launcher on Windows).
-- `pip` (up-to-date inside the virtual environment).
-- (Optional) Docker for containerized execution.
+- Python **3.11** (for monolithic mode)
+- Docker and Docker Compose (for microservices mode)
+- `pip` (up-to-date inside virtual environment)
 
 ---
 
-## Local setup and installation
+## Local Setup and Installation
 
-From the project root (`Layering-Detection-Analytics`):
+### Microservices Setup
+
+**Using Docker Compose (Recommended):**
+
+```powershell
+# Build and start all services
+docker-compose up --build
+
+# Services will be available at:
+# - Orchestrator: http://localhost:8000
+# - Layering: http://localhost:8001
+# - Wash Trading: http://localhost:8002
+# - Aggregator: http://localhost:8003
+
+# Check health
+curl http://localhost:8000/health
+curl http://localhost:8001/health
+curl http://localhost:8002/health
+curl http://localhost:8003/health
+```
+
+**Running Individual Services Locally:**
+
+Each service can be run independently for development:
+
+```powershell
+# Layering Service
+cd services/layering-service
+python -m pip install -r requirements.txt
+uvicorn main:app --port 8001
+
+# Wash Trading Service
+cd services/wash-trading-service
+python -m pip install -r requirements.txt
+uvicorn main:app --port 8002
+
+# Aggregator Service
+cd services/aggregator-service
+python -m pip install -r requirements.txt
+uvicorn main:app --port 8003
+
+# Orchestrator Service
+cd services/orchestrator-service
+python -m pip install -r requirements.txt
+uvicorn main:app --port 8000
+```
+
+### Monolithic Setup
+
+From the project root:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -101,56 +270,134 @@ python -m pip install --upgrade pip
 python -m pip install .
 ```
 
-This installs the `layering_detection` package from `src/` into your virtual environment.
-
 Ensure the input file is present at:
-
 - `input\transactions.csv`
 
 ---
 
-## Running the solution locally (end-to-end)
+## Running the Solution
 
-With the virtual environment activated and the package installed, run:
+### Microservices Mode (Recommended)
+
+**Using Docker Compose:**
 
 ```powershell
-python -c "from pathlib import Path; from layering_detection.runner import run_pipeline; run_pipeline(Path('input/transactions.csv'), Path('output'), Path('logs'))"
+# Start all services
+docker-compose up --build
+
+# Trigger pipeline execution
+curl -X POST http://localhost:8000/orchestrate `
+  -H "Content-Type: application/json" `
+  -d '{\"input_file\": \"input/transactions.csv\"}'
+
+# Or use PowerShell's Invoke-RestMethod
+$body = @{ input_file = "input/transactions.csv" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/orchestrate -Method POST -Body $body -ContentType "application/json"
 ```
 
-What this does:
+**Using Python Client:**
 
-- Reads `input/transactions.csv`.
-- Runs the layering detection engine.
-- Writes:
-  - `output\suspicious_accounts.csv`
-  - `logs\detections.csv`
+```python
+import httpx
 
-You can open these CSV files in your editor or Excel to inspect the results.
+response = httpx.post(
+    "http://localhost:8000/orchestrate",
+    json={"input_file": "input/transactions.csv"}
+)
+print(response.json())
+```
 
----
+**Outputs:**
+- `output/suspicious_accounts.csv`
+- `logs/detections.csv`
 
-## Running tests
+### Monolithic Mode (Backward Compatibility)
 
 With the virtual environment activated:
 
 ```powershell
-python -m pip install pytest
+python main.py
+```
+
+Or with custom paths:
+
+```powershell
+python main.py input/transactions.csv output logs
+```
+
+**Programmatic:**
+
+```powershell
+python -c "from pathlib import Path; from layering_detection.orchestrator import run_pipeline; run_pipeline(Path('input/transactions.csv'), Path('output'), Path('logs'))"
+```
+
+---
+
+## Running Tests
+
+With the virtual environment activated:
+
+```powershell
+python -m pip install pytest pytest-asyncio
 pytest
 ```
 
-This runs all unit and integration tests under `tests/`.
+**Test Structure:**
+- `tests/unit/` – Unit tests for individual components
+- `tests/integration/` – Integration tests for service interactions
+- `tests/e2e/` – End-to-end tests with Docker Compose
+
+**Run specific test suites:**
+
+```powershell
+pytest tests/unit/                    # Unit tests only
+pytest tests/integration/             # Integration tests only
+pytest tests/e2e/                     # End-to-end tests only
+pytest tests/unit/test_orchestrator_validation.py  # Specific test file
+```
 
 ---
 
 ## Running via Docker
 
-Build the Docker image from the project root with version tags:
+### Microservices (Docker Compose)
+
+Build and run all services:
+
+```powershell
+docker-compose up --build
+```
+
+This starts all four services with:
+- Health checks configured
+- Volumes mounted (`input/`, `output/`, `logs/`)
+- Network configured for inter-service communication
+- Automatic restarts on failure
+
+**Stop services:**
+
+```powershell
+docker-compose down
+```
+
+**View logs:**
+
+```powershell
+docker-compose logs -f orchestrator-service
+docker-compose logs -f layering-service
+docker-compose logs -f wash-trading-service
+docker-compose logs -f aggregator-service
+```
+
+### Monolithic (Single Container)
+
+Build the monolithic Docker image:
 
 ```powershell
 docker build -t layering-detection:0.1.0 -t layering-detection:latest .
 ```
 
-Run the container, mounting `input/`, `output/`, and `logs/` from the host:
+Run the container:
 
 ```powershell
 docker run --rm `
@@ -160,33 +407,60 @@ docker run --rm `
   layering-detection:0.1.0
 ```
 
-Or use the `latest` tag:
+---
 
-```powershell
-docker run --rm `
-  -v ${PWD}\input:/app/input `
-  -v ${PWD}\output:/app/output `
-  -v ${PWD}\logs:/app/logs `
-  layering-detection:latest
+## Output Format
+
+### `suspicious_accounts.csv`
+
+The output CSV contains one row per detected suspicious sequence. The schema includes:
+
+**Required Columns (all detection types):**
+- `account_id`: Suspicious account identifier
+- `product_id`: Product where activity was detected
+- `total_buy_qty`: Total BUY quantity during the pattern window (integer)
+- `total_sell_qty`: Total SELL quantity during the pattern window (integer)
+- `num_cancelled_orders`: Count of cancelled orders in the sequence
+  - For **LAYERING**: Actual count of cancelled orders (≥3)
+  - For **WASH_TRADING**: Always 0 (not applicable to wash trading)
+- `detected_timestamp`: ISO datetime when detection occurred
+  - For **LAYERING**: Timestamp of the opposite-side trade that completes the pattern
+  - For **WASH_TRADING**: Timestamp of the last trade in the 30-minute window
+
+**Additional Columns (for multi-algorithm support):**
+- `detection_type`: Type of detection pattern (`"LAYERING"` or `"WASH_TRADING"`)
+
+**Wash Trading Specific Columns (empty for LAYERING):**
+- `alternation_percentage`: Percentage of side switches between consecutive trades (decimal, 2 places)
+  - Empty string (`""`) for LAYERING detections
+  - Only populated for WASH_TRADING when ≥60% alternation is detected
+- `price_change_percentage`: Price change during the detection window (decimal, 2 places)
+  - Empty string (`""`) if:
+    - Detection type is LAYERING (not applicable)
+    - Price change is <1% (optional bonus threshold not met)
+  - Only populated for WASH_TRADING when price change ≥1% (optional bonus criterion)
+
+**Example Output:**
+```csv
+account_id,product_id,total_buy_qty,total_sell_qty,num_cancelled_orders,detected_timestamp,detection_type,alternation_percentage,price_change_percentage
+ACC001,IBM,3000,2000,3,2025-01-15T10:30:00Z,LAYERING,,
+ACC002,GOOG,12000,12000,0,2025-01-15T11:00:00Z,WASH_TRADING,80.00,1.25
 ```
 
-Inside the container, the default command:
-
-- Calls `run_pipeline("input/transactions.csv", "output", "logs")`.
-- Produces `output/suspicious_accounts.csv` and `logs/detections.csv` on the host (through the mounted volumes).
+**Note:** The assignment specification defines 6 core columns. The additional columns (`detection_type`, `alternation_percentage`, `price_change_percentage`) are included to support wash trading detection, which is also specified in the assignment requirements.
 
 ---
 
-## Outputs delivered (as per assignment)
+## Outputs Delivered
 
-After a successful run (local or Docker), you should have:
+After a successful run (microservices or monolithic), you should have:
 
 - `output\` folder containing:
-  - `suspicious_accounts.csv`
+  - `suspicious_accounts.csv` (see [Output Format](#output-format) above)
 - `logs\` folder containing:
   - `detections.csv`
 
-You can package these along with a screenshot of the running Docker container and this project as the final delivery. 
+You can package these along with a screenshot of the running Docker container and this project as the final delivery.
 
 ---
 
@@ -196,7 +470,7 @@ You can package these along with a screenshot of the running Docker container an
   - All timestamps in `transactions.csv` are UTC ISO datetimes with a trailing `Z` (e.g. `2025-10-26T10:21:20Z`).
   - Detection windows (10s for orders, 5s for cancels, 2s for opposite trades) are evaluated using these parsed datetimes.
 - **Order identity**:
-  - Input rows do not contain explicit order IDs; we approximate “orders cancelled before execution” purely from event type, side, and timing.
+  - Input rows do not contain explicit order IDs; we approximate "orders cancelled before execution" purely from event type, side, and timing.
   - Partially executed orders are not modeled explicitly; we rely on the simplified PRD and timing-only interpretation.
 - **Input quality**:
   - Invalid rows (bad types, invalid enums, missing fields) are rare and can be skipped with a warning; they do not abort the run.
@@ -207,7 +481,7 @@ You can package these along with a screenshot of the running Docker container an
 
 ---
 
-## Possible improvements / extensions
+## Possible Improvements / Extensions
 
 - **Richer order modeling**:
   - Introduce explicit order IDs and execution quantities if the upstream data supports them, to distinguish fully/partially executed vs. purely cancelled orders more accurately.
@@ -218,22 +492,23 @@ You can package these along with a screenshot of the running Docker container an
 - **Performance & scalability**:
   - For very large `transactions.csv` files, move from in-memory lists to streaming/grouped processing or chunked reads.
   - Consider parallelizing detection across accounts/products if/when CPU-bound.
+  - Add horizontal scaling support for algorithm services (load balancing).
 - **Operational hardening**:
   - Replace basic `logging` setup with a configurable logging configuration (JSON logs, log rotation, different sinks).
   - Add more robust error reporting for malformed inputs (summary statistics, counts per error type).
+  - Add distributed tracing (OpenTelemetry) for request tracking across services.
 - **Security & privacy**:
   - Expose a configuration switch to always pseudonymize account IDs in logs (and possibly outputs) for environments with stricter privacy requirements.
   - Extend CSV sanitization to any additional free-text fields if the schema grows in the future.
+  - Add authentication/authorization for service endpoints in production.
 
 ---
 
-## Notes on using Cursor for this project
+## Notes on Using Cursor for This Project
 
-- This repository was developed using the **Cursor** IDE with AI assistance wired into the project workspace.
-- The AI assistant was configured to:
-  - Read and respect the specification files under `specs/` and the original `assignment` text.
-  - Make incremental code changes directly in `src/` and `tests/`, keeping the codebase always in a runnable state.
-  - Run semantic and grep-style searches across the workspace to understand and refactor code.
-  - Use **specialized agents** (e.g., `@agent.pm.md`, `@agent.architect.md`, `@agent.reviewer.md`, `@agent.tester.md`, `@agent.security.md`, `@agent.devops.md`, `@agent.docs.md`) for different tasks such as planning, architecture, code review, testing, security review, DevOps/Docker, and documentation.
+This repository was developed using the **Cursor** IDE with AI assistance wired into the project workspace. The AI assistant was configured to:
 
-
+- Read and respect the specification files under `specs/` and the original `assignment` text.
+- Make incremental code changes directly in `src/` and `tests/`, keeping the codebase always in a runnable state.
+- Run semantic and grep-style searches across the workspace to understand and refactor code.
+- Use **specialized agents** (e.g., `@agent.pm.md`, `@agent.architect.md`, `@agent.reviewer.md`, `@agent.tester.md`, `@agent.security.md`, `@agent.devops.md`, `@agent.docs.md`) for different tasks such as planning, architecture, code review, testing, security review, DevOps/Docker, and documentation.
