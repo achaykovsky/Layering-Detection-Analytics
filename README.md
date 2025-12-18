@@ -504,6 +504,419 @@ You can package these along with a screenshot of the running Docker container an
 
 ---
 
+## API Reference
+
+All services expose REST APIs with JSON request/response bodies. All endpoints use standard HTTP status codes.
+
+### Orchestrator Service (`http://localhost:8000`)
+
+**`POST /orchestrate`** – Trigger full pipeline execution
+
+**Request:**
+```json
+{
+  "input_file": "input/transactions.csv"
+}
+```
+
+**Response:**
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "event_count": 1000,
+  "aggregated_count": 5,
+  "failed_services": [],
+  "error": null
+}
+```
+
+**`GET /health`** – Health check
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "orchestrator-service"
+}
+```
+
+**`GET /`** – Service information
+
+**Response:**
+```json
+{
+  "service": "orchestrator-service",
+  "version": "1.0.0",
+  "status": "running",
+  "input_dir": "/app/input",
+  "layering_service_url": "http://layering-service:8001",
+  "wash_trading_service_url": "http://wash-trading-service:8002",
+  "aggregator_service_url": "http://aggregator-service:8003",
+  "max_retries": 3,
+  "timeout_seconds": 30
+}
+```
+
+### Algorithm Services (Layering `:8001`, Wash Trading `:8002`)
+
+**`POST /detect`** – Run detection algorithm
+
+**Request:**
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "event_fingerprint": "abc123...",
+  "events": [
+    {
+      "timestamp": "2025-01-15T10:30:00Z",
+      "account_id": "ACC001",
+      "product_id": "IBM",
+      "side": "BUY",
+      "price": "100.50",
+      "quantity": 1000,
+      "event_type": "ORDER_PLACED"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "service_name": "layering",
+  "status": "success",
+  "results": [
+    {
+      "account_id": "ACC001",
+      "product_id": "IBM",
+      "start_timestamp": "2025-01-15T10:30:00Z",
+      "end_timestamp": "2025-01-15T10:30:05Z",
+      "total_buy_qty": 3000,
+      "total_sell_qty": 2000,
+      "detection_type": "LAYERING",
+      "num_cancelled_orders": 3
+    }
+  ],
+  "error": null
+}
+```
+
+**`GET /health`** – Health check
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "layering-service"
+}
+```
+
+### Aggregator Service (`http://localhost:8003`)
+
+**`POST /aggregate`** – Aggregate and write results
+
+**Request:**
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "expected_services": ["layering", "wash_trading"],
+  "results": [
+    {
+      "request_id": "550e8400-e29b-41d4-a716-446655440000",
+      "service_name": "layering",
+      "status": "success",
+      "results": [...],
+      "error": null
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "completed",
+  "merged_count": 5,
+  "failed_services": []
+}
+```
+
+**`GET /health`** – Health check
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "aggregator-service"
+}
+```
+
+---
+
+## Configuration
+
+All services use environment variables for configuration. Set these in `docker-compose.yml` or as container environment variables.
+
+### Orchestrator Service
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8000` | Service port |
+| `INPUT_DIR` | `/app/input` | Directory for input CSV files |
+| `LAYERING_SERVICE_URL` | `http://layering-service:8001` | Layering service URL |
+| `WASH_TRADING_SERVICE_URL` | `http://wash-trading-service:8002` | Wash trading service URL |
+| `AGGREGATOR_SERVICE_URL` | `http://aggregator-service:8003` | Aggregator service URL |
+| `MAX_RETRIES` | `3` | Maximum retry attempts per algorithm call |
+| `ALGORITHM_TIMEOUT_SECONDS` | `30` | Timeout per algorithm service call |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+
+### Algorithm Services (Layering, Wash Trading)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8001` / `8002` | Service port |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+### Aggregator Service
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8003` | Service port |
+| `OUTPUT_DIR` | `/app/output` | Directory for output CSV files |
+| `LOGS_DIR` | `/app/logs` | Directory for log CSV files |
+| `VALIDATION_STRICT` | `true` | Fail fast on validation errors |
+| `ALLOW_PARTIAL_RESULTS` | `false` | Allow merging if some services failed |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+**Example Docker Compose override:**
+
+```yaml
+services:
+  orchestrator-service:
+    environment:
+      - MAX_RETRIES=5
+      - ALGORITHM_TIMEOUT_SECONDS=60
+      - LOG_LEVEL=DEBUG
+```
+
+---
+
+## Troubleshooting
+
+### Services Won't Start
+
+**Problem:** Docker Compose fails to start services
+
+**Solutions:**
+- Check port availability: `netstat -ano | findstr :8000`
+- Verify Docker is running: `docker ps`
+- Check logs: `docker-compose logs orchestrator-service`
+- Rebuild images: `docker-compose build --no-cache`
+
+### Pipeline Fails with "Missing Services"
+
+**Problem:** Orchestrator reports missing or incomplete services
+
+**Solutions:**
+- Verify all services are healthy: `curl http://localhost:8001/health`
+- Check service logs: `docker-compose logs layering-service`
+- Verify network connectivity: Services must be on same Docker network
+- Check `EXPECTED_SERVICES` matches running services
+
+### Algorithm Service Timeouts
+
+**Problem:** Algorithm services timeout during detection
+
+**Solutions:**
+- Increase timeout: Set `ALGORITHM_TIMEOUT_SECONDS=60` in orchestrator config
+- Check service resources: `docker stats`
+- Verify input file size: Large files may need streaming
+- Check algorithm service logs for errors
+
+### Output Files Not Created
+
+**Problem:** `suspicious_accounts.csv` or `detections.csv` missing
+
+**Solutions:**
+- Verify aggregator service completed: Check logs `docker-compose logs aggregator-service`
+- Check volume mounts: `docker-compose config` shows volume configuration
+- Verify write permissions: `ls -la output/` (Linux) or check directory permissions (Windows)
+- Check aggregator validation: Look for "validation_failed" in response
+
+### Retry Logic Not Working
+
+**Problem:** Services fail immediately without retries
+
+**Solutions:**
+- Verify `MAX_RETRIES` is set: Check orchestrator config
+- Check retry conditions: Only transient errors (5xx, timeouts) trigger retries
+- Review logs: Look for "Retrying" messages in orchestrator logs
+- Verify exponential backoff: Check delay between retries (2^attempt seconds)
+
+### Health Checks Failing
+
+**Problem:** Docker health checks report unhealthy
+
+**Solutions:**
+- Check service is listening: `curl http://localhost:8000/health`
+- Verify health check command: Check `docker-compose.yml` healthcheck configuration
+- Check service startup time: Increase `start_period` if service needs more time
+- Review service logs for startup errors
+
+---
+
+## Monitoring and Observability
+
+### Health Checks
+
+All services expose `/health` endpoints for health monitoring:
+
+```powershell
+# Check all services
+curl http://localhost:8000/health
+curl http://localhost:8001/health
+curl http://localhost:8002/health
+curl http://localhost:8003/health
+```
+
+### Logging
+
+Services log to stdout/stderr (Docker-friendly). View logs:
+
+```powershell
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f orchestrator-service
+docker-compose logs -f layering-service
+docker-compose logs -f wash-trading-service
+docker-compose logs -f aggregator-service
+
+# Last 100 lines
+docker-compose logs --tail=100 orchestrator-service
+
+# Since timestamp
+docker-compose logs --since 10m orchestrator-service
+```
+
+**Log Format:**
+- Structured logging with service name and request_id
+- Log levels: DEBUG, INFO, WARNING, ERROR
+- Request tracing via `request_id` across services
+
+### Metrics (Future Enhancement)
+
+Planned metrics for production:
+- Request count per service
+- Request latency (p50, p95, p99)
+- Error rate per service
+- Retry count distribution
+- Cache hit/miss ratio
+
+### Distributed Tracing (Future Enhancement)
+
+Planned tracing support:
+- OpenTelemetry integration
+- Request ID propagation across services
+- Trace visualization (Jaeger/Zipkin)
+
+---
+
+## Deployment
+
+### Production Considerations
+
+**Security:**
+- Add authentication/authorization for service endpoints
+- Use HTTPS/TLS for inter-service communication
+- Restrict network access (firewall rules)
+- Rotate secrets and API keys regularly
+- Enable account ID pseudonymization in logs
+
+**Scalability:**
+- Scale algorithm services horizontally (load balancer)
+- Use message queue (RabbitMQ/Kafka) for async processing
+- Implement connection pooling for HTTP clients
+- Add caching layer (Redis) for result deduplication
+- Consider database for persistent result storage
+
+**Reliability:**
+- Configure service restart policies (`restart: unless-stopped`)
+- Set resource limits (CPU, memory) per service
+- Implement circuit breakers for service calls
+- Add dead letter queues for failed requests
+- Monitor service health with alerting
+
+**Performance:**
+- Use streaming for large CSV files (>1GB)
+- Implement request batching for algorithm calls
+- Add result pagination for large result sets
+- Optimize Docker images (multi-stage builds)
+- Use CDN for static assets (if applicable)
+
+### Docker Compose Production Override
+
+Create `docker-compose.prod.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  orchestrator-service:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    environment:
+      - LOG_LEVEL=WARNING
+      - MAX_RETRIES=5
+      - ALGORITHM_TIMEOUT_SECONDS=60
+
+  layering-service:
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  wash-trading-service:
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+```
+
+**Deploy:**
+
+```powershell
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+### Kubernetes Deployment (Future)
+
+Planned Kubernetes manifests:
+- Deployment manifests per service
+- Service definitions for internal/external access
+- ConfigMaps for configuration
+- Secrets for sensitive data
+- HorizontalPodAutoscaler for auto-scaling
+- Ingress for external access
+
+---
+
 ## Notes on Using Cursor for This Project
 
 This repository was developed using the **Cursor** IDE with AI assistance wired into the project workspace. The AI assistant was configured to:
