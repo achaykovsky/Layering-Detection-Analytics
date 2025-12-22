@@ -8,7 +8,7 @@ without changing net position.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable, List
 
@@ -67,6 +67,123 @@ def _calculate_price_change_percentage(trades: List[TransactionEvent]) -> float 
     
     price_change = abs((last_price - first_price) / first_price) * 100.0
     return price_change
+
+
+def _collect_window_trades(
+    trades: List[TransactionEvent],
+    start_idx: int,
+    window_size: timedelta,
+) -> List[TransactionEvent]:
+    """
+    Collect trades within a sliding window using two-pointer technique.
+    
+    Uses an efficient O(n) algorithm where the end pointer only moves forward,
+    avoiding the O(n²) nested loop approach.
+    
+    Args:
+        trades: List of trades sorted by timestamp (non-empty).
+        start_idx: Starting index for the window (0-indexed).
+        window_size: Size of the time window (timedelta).
+    
+    Returns:
+        List of trades within the window [start_trade.timestamp, start_trade.timestamp + window_size].
+        Trades are inclusive of the window boundaries.
+    
+    Time Complexity: O(n) where n is the number of trades.
+        Each trade is visited at most twice (once as start, once as end).
+    
+    Example:
+        >>> from datetime import datetime, timedelta
+        >>> trades = [
+        ...     TransactionEvent(timestamp=datetime(2024, 1, 1, 10, 0, 0), ...),
+        ...     TransactionEvent(timestamp=datetime(2024, 1, 1, 10, 5, 0), ...),
+        ...     TransactionEvent(timestamp=datetime(2024, 1, 1, 10, 35, 0), ...),
+        ... ]
+        >>> window_trades = _collect_window_trades(trades, start_idx=0, window_size=timedelta(minutes=30))
+        >>> len(window_trades)
+        2
+    """
+    if start_idx >= len(trades):
+        return []
+    
+    start_trade = trades[start_idx]
+    window_start = start_trade.timestamp
+    window_end = window_start + window_size
+    
+    # Two-pointer approach: find end_idx where trades[end_idx].timestamp > window_end
+    # Start end_idx from start_idx (inclusive boundary)
+    end_idx = start_idx
+    
+    # Advance end_idx until we exceed the window
+    while end_idx < len(trades):
+        trade = trades[end_idx]
+        if trade.timestamp > window_end:
+            break
+        end_idx += 1
+    
+    # Return trades from start_idx to end_idx (exclusive of end_idx)
+    return trades[start_idx:end_idx]
+
+
+def _validate_wash_trading_window(
+    window_trades: List[TransactionEvent],
+    config: WashTradingConfig,
+) -> tuple[bool, List[TransactionEvent], List[TransactionEvent]]:
+    """
+    Validate a window of trades against wash trading detection criteria.
+    
+    Checks if the window meets all minimum requirements:
+    - Minimum total trades (min_buy_trades + min_sell_trades)
+    - Minimum buy trades (min_buy_trades)
+    - Minimum sell trades (min_sell_trades)
+    - Minimum total volume (min_total_volume)
+    - Minimum alternation percentage (min_alternation_percentage)
+    
+    Args:
+        window_trades: List of trades within the window, sorted by timestamp.
+        config: Wash trading detection configuration.
+    
+    Returns:
+        Tuple of (is_valid: bool, buy_trades: List[TransactionEvent], sell_trades: List[TransactionEvent]):
+        - is_valid: True if window meets all criteria, False otherwise
+        - buy_trades: List of BUY trades (separated for reuse)
+        - sell_trades: List of SELL trades (separated for reuse)
+    
+    Example:
+        >>> from datetime import datetime, timedelta
+        >>> config = WashTradingConfig()
+        >>> window_trades = [
+        ...     TransactionEvent(timestamp=datetime.now(), side="BUY", ...),
+        ...     TransactionEvent(timestamp=datetime.now(), side="SELL", ...),
+        ... ]
+        >>> is_valid, buy_trades, sell_trades = _validate_wash_trading_window(window_trades, config)
+        >>> is_valid
+        False  # Not enough trades
+    """
+    # Early exit: check minimum total trades
+    if len(window_trades) < config.min_buy_trades + config.min_sell_trades:
+        return False, [], []
+    
+    # Separate BUY and SELL trades
+    buy_trades = [t for t in window_trades if t.side == "BUY"]
+    sell_trades = [t for t in window_trades if t.side == "SELL"]
+    
+    # Check minimum buy and sell trades
+    if len(buy_trades) < config.min_buy_trades or len(sell_trades) < config.min_sell_trades:
+        return False, buy_trades, sell_trades
+    
+    # Check minimum total volume
+    total_volume = sum(t.quantity for t in window_trades)
+    if total_volume < config.min_total_volume:
+        return False, buy_trades, sell_trades
+    
+    # Check minimum alternation percentage
+    alternation_pct = _calculate_alternation_percentage(window_trades)
+    if alternation_pct < config.min_alternation_percentage:
+        return False, buy_trades, sell_trades
+    
+    # All checks passed
+    return True, buy_trades, sell_trades
 
 
 def _detect_wash_trading_for_group(
