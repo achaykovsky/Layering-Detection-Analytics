@@ -69,6 +69,24 @@ def create_mock_async_client(post_handler):
     return MockAsyncClient
 
 
+# Store original asyncio.sleep before any patching
+_original_asyncio_sleep = asyncio.sleep
+
+def create_fast_sleep_mock():
+    """
+    Create a mock for asyncio.sleep that reduces delays for faster tests.
+    
+    Returns an async function that replaces asyncio.sleep in the retry module.
+    The mock reduces all sleep delays to 0.01s while maintaining test logic.
+    """
+    async def fast_sleep(delay: float) -> None:
+        """Mock sleep that reduces delays to 0.01s for test speed."""
+        # Use original asyncio.sleep (captured at module level) to avoid recursion
+        await _original_asyncio_sleep(0.01)  # Minimal delay for test speed
+    
+    return fast_sleep
+
+
 class TestRetryOnTimeoutError:
     """Tests for retry logic on TimeoutError."""
 
@@ -101,11 +119,16 @@ class TestRetryOnTimeoutError:
                 # First call times out
                 raise httpx.TimeoutException("Request timed out")
             # Second call succeeds
-            return httpx.Response(200, json=mock_response.model_dump())
+            mock_request = httpx.Request("POST", url)
+            response = httpx.Response(200, json=mock_response.model_dump(), request=mock_request)
+            response.raise_for_status = lambda: None
+            return response
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="layering",
@@ -140,7 +163,9 @@ class TestRetryOnTimeoutError:
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="layering",
@@ -192,11 +217,16 @@ class TestRetryOnConnectionError:
                 # First call fails with connection error
                 raise httpx.ConnectError("Connection refused")
             # Second call succeeds
-            return httpx.Response(200, json=mock_response.model_dump())
+            mock_request = httpx.Request("POST", url)
+            response = httpx.Response(200, json=mock_response.model_dump(), request=mock_request)
+            response.raise_for_status = lambda: None
+            return response
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="wash_trading",
@@ -231,7 +261,9 @@ class TestRetryOnConnectionError:
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="wash_trading",
@@ -282,11 +314,16 @@ class TestRetryOnHttp5xxErrors:
                 response = httpx.Response(500, json={"detail": "Internal server error"})
                 raise httpx.HTTPStatusError("Server error", request=None, response=response)
             # Second call succeeds
-            return httpx.Response(200, json=mock_response.model_dump())
+            mock_request = httpx.Request("POST", url)
+            response = httpx.Response(200, json=mock_response.model_dump(), request=mock_request)
+            response.raise_for_status = lambda: None
+            return response
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="layering",
@@ -334,11 +371,16 @@ class TestRetryOnHttp5xxErrors:
                 response = httpx.Response(503, json={"detail": "Service unavailable"})
                 raise httpx.HTTPStatusError("Service unavailable", request=None, response=response)
             # Third call succeeds
-            return httpx.Response(200, json=mock_response.model_dump())
+            mock_request = httpx.Request("POST", url)
+            response = httpx.Response(200, json=mock_response.model_dump(), request=mock_request)
+            response.raise_for_status = lambda: None
+            return response
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="wash_trading",
@@ -374,7 +416,9 @@ class TestRetryOnHttp5xxErrors:
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="layering",
@@ -504,7 +548,10 @@ class TestExponentialBackoff:
             # Fail first 2 attempts, succeed on 3rd
             if len(sleep_times) < 2:
                 raise httpx.TimeoutException("Request timed out")
-            return httpx.Response(200, json=mock_response.model_dump())
+            mock_request = httpx.Request("POST", url)
+            response = httpx.Response(200, json=mock_response.model_dump(), request=mock_request)
+            response.raise_for_status = lambda: None
+            return response
 
         # Mock asyncio.sleep to capture sleep times
         original_sleep = asyncio.sleep
@@ -560,15 +607,22 @@ class TestRetryCountTracking:
             final_status=True,
         )
 
+        call_count = {"count": 0}
         async def mock_post(self, url, **kwargs):
+            call_count["count"] += 1
             # Fail first attempt, succeed on second
-            if service_status.get("layering", {}).get("retry_count", -1) < 0:
+            if call_count["count"] < 2:
                 raise httpx.TimeoutException("Request timed out")
-            return httpx.Response(200, json=mock_response.model_dump())
+            mock_request = httpx.Request("POST", url)
+            response = httpx.Response(200, json=mock_response.model_dump(), request=mock_request)
+            response.raise_for_status = lambda: None
+            return response
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="layering",
@@ -606,7 +660,9 @@ class TestFinalStatusAfterExhaustion:
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act
             await process_with_retries(
                 service_name="layering",
@@ -652,7 +708,10 @@ class TestFaultIsolation:
         async def mock_post(self, url, **kwargs):
             # Layering service succeeds
             if "layering" in url.lower() or "8001" in url:
-                return httpx.Response(200, json=layering_response.model_dump())
+                mock_request = httpx.Request("POST", url)
+                response = httpx.Response(200, json=layering_response.model_dump(), request=mock_request)
+                response.raise_for_status = lambda: None
+                return response
             # Wash trading service fails
             if "wash" in url.lower() or "8002" in url:
                 raise httpx.TimeoutException("Request timed out")
@@ -660,7 +719,9 @@ class TestFaultIsolation:
 
         MockAsyncClient = create_mock_async_client(mock_post)
 
-        with patch("httpx.AsyncClient", MockAsyncClient):
+        with patch("httpx.AsyncClient", MockAsyncClient), patch.object(
+            orchestrator_retry.asyncio, "sleep", create_fast_sleep_mock()
+        ):
             # Act - Process both services
             import asyncio
             await asyncio.gather(
