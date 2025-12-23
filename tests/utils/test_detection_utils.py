@@ -14,6 +14,7 @@ from layering_detection.utils.detection_utils import (
     validate_positive,
 )
 from layering_detection.models import TransactionEvent
+from tests.fixtures import create_transaction_event
 
 
 class TestGroupEventsByAccountProduct:
@@ -24,7 +25,7 @@ class TestGroupEventsByAccountProduct:
         # Arrange
         base_time = datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -33,7 +34,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -42,7 +43,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=500,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC002",
                 product_id="GOOG",
@@ -68,7 +69,7 @@ class TestGroupEventsByAccountProduct:
         # Arrange
         base_time = datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time.replace(second=30),
                 account_id="ACC001",
                 product_id="IBM",
@@ -77,7 +78,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time.replace(second=10),
                 account_id="ACC001",
                 product_id="IBM",
@@ -86,7 +87,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=500,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time.replace(second=20),
                 account_id="ACC001",
                 product_id="IBM",
@@ -123,7 +124,7 @@ class TestGroupEventsByAccountProduct:
         # Arrange
         base_time = datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -147,7 +148,7 @@ class TestGroupEventsByAccountProduct:
         # Arrange
         base_time = datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -156,7 +157,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC002",
                 product_id="IBM",
@@ -180,7 +181,7 @@ class TestGroupEventsByAccountProduct:
         # Arrange
         base_time = datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -189,7 +190,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="GOOG",
@@ -213,7 +214,7 @@ class TestGroupEventsByAccountProduct:
         # Arrange
         base_time = datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -222,7 +223,7 @@ class TestGroupEventsByAccountProduct:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,  # Same timestamp
                 account_id="ACC001",
                 product_id="IBM",
