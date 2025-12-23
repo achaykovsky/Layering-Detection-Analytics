@@ -19,6 +19,7 @@ from services.shared.converters import (
     suspicious_sequence_to_dto,
     transaction_event_to_dto,
 )
+from tests.fixtures import create_transaction_event, create_transaction_event_dto
 
 
 class TestTransactionEventConversions:
@@ -26,7 +27,7 @@ class TestTransactionEventConversions:
 
     def test_transaction_event_to_dto(self) -> None:
         """Test converting TransactionEvent to DTO."""
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -47,7 +48,7 @@ class TestTransactionEventConversions:
 
     def test_dto_to_transaction_event(self) -> None:
         """Test converting DTO to TransactionEvent."""
-        dto = TransactionEventDTO(
+        dto = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -67,7 +68,7 @@ class TestTransactionEventConversions:
     def test_datetime_timezone_aware(self) -> None:
         """Test conversion handles timezone-aware datetime."""
         tz_aware_dt = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=tz_aware_dt,
             account_id="ACC001",
             product_id="IBM",
@@ -82,7 +83,7 @@ class TestTransactionEventConversions:
 
     def test_datetime_with_z_suffix(self) -> None:
         """Test conversion handles Z suffix in ISO datetime."""
-        dto = TransactionEventDTO(
+        dto = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00Z",
             account_id="ACC001",
             product_id="IBM",
@@ -98,7 +99,7 @@ class TestTransactionEventConversions:
         """Test Decimal precision is preserved through conversion."""
         # Use a Decimal with many decimal places
         precise_price = Decimal("123.45678901234567890")
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -114,7 +115,7 @@ class TestTransactionEventConversions:
 
     def test_round_trip_conversion(self) -> None:
         """Test round-trip conversion preserves all data."""
-        original_event = TransactionEvent(
+        original_event = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -131,7 +132,7 @@ class TestTransactionEventConversions:
         """Test round-trip conversion for all event types."""
         event_types = ["ORDER_PLACED", "ORDER_CANCELLED", "TRADE_EXECUTED"]
         for event_type in event_types:
-            event = TransactionEvent(
+            event = create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -147,7 +148,7 @@ class TestTransactionEventConversions:
     def test_round_trip_all_sides(self) -> None:
         """Test round-trip conversion for both sides."""
         for side in ["BUY", "SELL"]:
-            event = TransactionEvent(
+            event = create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -445,7 +446,7 @@ class TestEdgeCases:
     def test_datetime_microseconds_preserved(self) -> None:
         """Test datetime microseconds are preserved."""
         dt_with_microseconds = datetime(2025, 1, 15, 10, 30, 0, 123456)
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=dt_with_microseconds,
             account_id="ACC001",
             product_id="IBM",
@@ -460,7 +461,7 @@ class TestEdgeCases:
 
     def test_decimal_scientific_notation(self) -> None:
         """Test Decimal handles scientific notation strings."""
-        dto = TransactionEventDTO(
+        dto = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -474,7 +475,7 @@ class TestEdgeCases:
 
     def test_datetime_with_timezone_offset(self) -> None:
         """Test datetime with timezone offset."""
-        dto = TransactionEventDTO(
+        dto = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00+05:00",
             account_id="ACC001",
             product_id="IBM",
@@ -489,7 +490,7 @@ class TestEdgeCases:
 
     def test_decimal_zero_value(self) -> None:
         """Test Decimal zero value is preserved."""
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -506,7 +507,7 @@ class TestEdgeCases:
     def test_decimal_very_large_value(self) -> None:
         """Test Decimal with very large value preserves precision."""
         large_price = Decimal("999999999999999.999999999999999")
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -522,7 +523,7 @@ class TestEdgeCases:
     def test_datetime_min_value(self) -> None:
         """Test datetime with minimum valid value."""
         min_dt = datetime(1970, 1, 1, 0, 0, 0)
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=min_dt,
             account_id="ACC001",
             product_id="IBM",
@@ -538,7 +539,7 @@ class TestEdgeCases:
     def test_datetime_max_value(self) -> None:
         """Test datetime with maximum valid value."""
         max_dt = datetime(9999, 12, 31, 23, 59, 59)
-        event = TransactionEvent(
+        event = create_transaction_event(
             timestamp=max_dt,
             account_id="ACC001",
             product_id="IBM",
@@ -555,7 +556,7 @@ class TestEdgeCases:
         """Test conversion handles empty string fields (should fail validation)."""
         # Empty account_id should fail validation
         with pytest.raises(Exception):  # ValidationError from Pydantic
-            dto = TransactionEventDTO(
+            dto = create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="",  # Empty string
                 product_id="IBM",
