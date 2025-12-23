@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.shared.api_models import AggregateResponse, AlgorithmResponse
+from tests.fixtures import create_algorithm_response
 
 # Import orchestrator main module
 project_root = Path(__file__).parent.parent.parent
@@ -53,6 +54,25 @@ def create_mock_async_client(post_handler):
     return MockAsyncClient
 
 
+def create_mock_response(status_code: int, json_data: dict, url: str = "http://test") -> httpx.Response:
+    """Create a mock httpx.Response with proper request instance for raise_for_status()."""
+    mock_request = httpx.Request("POST", url)
+    response = httpx.Response(status_code, json=json_data, request=mock_request)
+    # Mock raise_for_status to not raise for 2xx status codes
+    if 200 <= status_code < 300:
+        response.raise_for_status = lambda: None
+    else:
+        # For error status codes, raise_for_status should raise HTTPStatusError
+        def raise_for_status():
+            raise httpx.HTTPStatusError(
+                f"HTTP {status_code}",
+                request=mock_request,
+                response=response,
+            )
+        response.raise_for_status = raise_for_status
+    return response
+
+
 @pytest.fixture
 def sample_csv_file() -> Path:
     """Create temporary CSV file with sample transaction data."""
@@ -84,21 +104,20 @@ class TestOrchestrateEndpoint:
     ) -> None:
         """Test successful orchestration with mocked algorithm and aggregator services."""
         # Arrange - Mock algorithm service responses
-        mock_layering_response = AlgorithmResponse(
-            request_id="test-request-id",
+        test_request_id = str(uuid4())
+        mock_layering_response = create_algorithm_response(
+            request_id=test_request_id,
             service_name="layering",
             status="success",
             results=[],
-            error=None,
             final_status=True,
         )
 
-        mock_wash_trading_response = AlgorithmResponse(
-            request_id="test-request-id",
+        mock_wash_trading_response = create_algorithm_response(
+            request_id=test_request_id,
             service_name="wash_trading",
             status="success",
             results=[],
-            error=None,
             final_status=True,
         )
 
@@ -115,26 +134,17 @@ class TestOrchestrateEndpoint:
 
             # Mock layering service - URL contains "layering" and ends with "/detect"
             if "/detect" in url and ("layering" in url.lower() or "8001" in url):
-                return httpx.Response(
-                    200,
-                    json=mock_layering_response.model_dump(),
-                )
+                return create_mock_response(200, mock_layering_response.model_dump(), url)
 
             # Mock wash trading service - URL contains "wash" and ends with "/detect"
             if "/detect" in url and ("wash" in url.lower() or "8002" in url):
-                return httpx.Response(
-                    200,
-                    json=mock_wash_trading_response.model_dump(),
-                )
+                return create_mock_response(200, mock_wash_trading_response.model_dump(), url)
 
             # Mock aggregator service - URL ends with "/aggregate"
             if "/aggregate" in url:
-                return httpx.Response(
-                    200,
-                    json=mock_aggregate_response.model_dump(),
-                )
+                return create_mock_response(200, mock_aggregate_response.model_dump(), url)
 
-            return httpx.Response(404, json={"detail": "Not found"})
+            return create_mock_response(404, {"detail": "Not found"}, url)
 
         # Patch httpx.AsyncClient
         MockAsyncClient = create_mock_async_client(mock_post)
@@ -165,33 +175,35 @@ class TestOrchestrateEndpoint:
     ) -> None:
         """Test CSV reading functionality."""
         # Arrange - Mock services to return success
+        test_request_id = str(uuid4())
         async def mock_post(self, url, **kwargs):
             # Mock algorithm services
             if "/detect" in url:
                 service_name = "layering" if ("layering" in url.lower() or "8001" in url) else "wash_trading"
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": "test-id",
-                        "service_name": service_name,
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=test_request_id,
+                        service_name=service_name,
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
             # Mock aggregator service
             if "/aggregate" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
         MockAsyncClient = create_mock_async_client(mock_post)
         with patch("httpx.AsyncClient", MockAsyncClient):
@@ -227,16 +239,16 @@ class TestOrchestrateEndpoint:
                     captured_request_ids.append(request_id)
 
                 service_name = "layering" if ("layering" in url.lower() or "8001" in url) else "wash_trading"
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": request_id or "test-id",
-                        "service_name": service_name,
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=request_id or str(uuid4()),
+                        service_name=service_name,
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
@@ -245,17 +257,18 @@ class TestOrchestrateEndpoint:
                 if captured_request_ids:
                     assert aggregate_request_id == captured_request_ids[0]
 
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
         MockAsyncClient = create_mock_async_client(mock_post)
         with patch("httpx.AsyncClient", MockAsyncClient):
@@ -295,30 +308,31 @@ class TestOrchestrateEndpoint:
                     captured_fingerprints.append(fingerprint)
 
                 service_name = "layering" if ("layering" in url.lower() or "8001" in url) else "wash_trading"
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": json_data.get("request_id", "test-id"),
-                        "service_name": service_name,
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=json_data.get("request_id", str(uuid4())),
+                        service_name=service_name,
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
         MockAsyncClient = create_mock_async_client(mock_post)
         with patch("httpx.AsyncClient", MockAsyncClient):
@@ -349,40 +363,40 @@ class TestOrchestrateEndpoint:
         call_times: list[float] = []
         import time
 
-        async def mock_post(*args, **kwargs):
-            url = kwargs.get("url", args[1] if len(args) > 1 else "")
+        async def mock_post(self, url, **kwargs):
             call_times.append(time.time())
 
             if "/detect" in url:
                 # Simulate service processing time
                 await asyncio.sleep(0.1)
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": "test-id",
-                        "service_name": "layering" if "layering" in url else "wash_trading",
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=str(uuid4()),
+                        service_name="layering" if ("layering" in url.lower() or "8001" in url) else "wash_trading",
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_func:
-            mock_post_func.side_effect = mock_post
+        MockAsyncClient = create_mock_async_client(mock_post)
+        with patch("httpx.AsyncClient", MockAsyncClient):
 
             # Act
             response = client.post(
@@ -392,9 +406,8 @@ class TestOrchestrateEndpoint:
 
             # Assert
             assert response.status_code == 200
-            # Verify both algorithm services were called
-            detect_calls = [call for call in mock_post_func.call_args_list if "/detect" in str(call)]
-            assert len(detect_calls) >= 2  # Both services called
+            # Verify both algorithm services were called (check call_times)
+            assert len(call_times) >= 2  # Both services called
 
     @pytest.mark.asyncio
     async def test_retry_logic_on_failure(
@@ -406,47 +419,47 @@ class TestOrchestrateEndpoint:
         # Arrange - Track retry attempts
         retry_count = {"layering": 0, "wash_trading": 0}
 
-        async def mock_post(*args, **kwargs):
-            url = kwargs.get("url", args[1] if len(args) > 1 else "")
-
+        async def mock_post(self, url, **kwargs):
             if "/detect" in url:
-                service_name = "layering" if "layering" in url else "wash_trading"
+                service_name = "layering" if ("layering" in url.lower() or "8001" in url) else "wash_trading"
                 retry_count[service_name] += 1
 
                 # Fail first 2 attempts, succeed on 3rd
                 if retry_count[service_name] < 3:
-                    return httpx.Response(
+                    return create_mock_response(
                         500,
-                        json={"detail": "Internal server error"},
+                        {"detail": "Internal server error"},
+                        url,
                     )
 
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": "test-id",
-                        "service_name": service_name,
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=str(uuid4()),
+                        service_name=service_name,
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_func:
-            mock_post_func.side_effect = mock_post
+        MockAsyncClient = create_mock_async_client(mock_post)
+        with patch("httpx.AsyncClient", MockAsyncClient):
 
             # Act
             response = client.post(
@@ -475,23 +488,25 @@ class TestOrchestrateEndpoint:
 
             if "/detect" in url:
                 # Always fail
-                return httpx.Response(
+                return create_mock_response(
                     500,
-                    json={"detail": "Service unavailable"},
+                    {"detail": "Service unavailable"},
+                    url,
                 )
 
             if "/aggregate" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_func:
             mock_post_func.side_effect = mock_post
@@ -525,30 +540,31 @@ class TestOrchestrateEndpoint:
                 # wash_trading returns final_status=False
                 final_status = service_name != "wash_trading"
 
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": "test-id",
-                        "service_name": service_name,
-                        "status": "success" if final_status else "pending",
-                        "results": [],
-                        "error": None,
-                        "final_status": final_status,
-                    },
+                    create_algorithm_response(
+                        request_id=str(uuid4()),
+                        service_name=service_name,
+                        status="success" if final_status else "pending",
+                        results=[],
+                        final_status=final_status,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_func:
             mock_post_func.side_effect = mock_post
@@ -573,21 +589,20 @@ class TestOrchestrateEndpoint:
         # Arrange - Capture aggregate request
         captured_aggregate_request: dict | None = None
 
-        async def mock_post(*args, **kwargs):
-            url = kwargs.get("url", args[1] if len(args) > 1 else "")
+        async def mock_post(self, url, **kwargs):
             json_data = kwargs.get("json", {})
 
             if "/detect" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": json_data.get("request_id", "test-id"),
-                        "service_name": "layering" if "layering" in url else "wash_trading",
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=json_data.get("request_id", str(uuid4())),
+                        service_name="layering" if ("layering" in url.lower() or "8001" in url) else "wash_trading",
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
@@ -595,20 +610,21 @@ class TestOrchestrateEndpoint:
                 nonlocal captured_aggregate_request
                 captured_aggregate_request = json_data
 
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
+                    {
                         "status": "completed",
                         "merged_count": 0,
                         "failed_services": [],
                         "error": None,
                     },
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_func:
-            mock_post_func.side_effect = mock_post
+        MockAsyncClient = create_mock_async_client(mock_post)
+        with patch("httpx.AsyncClient", MockAsyncClient):
 
             # Act
             response = client.post(
@@ -638,26 +654,27 @@ class TestOrchestrateEndpoint:
             url = kwargs.get("url", args[1] if len(args) > 1 else "")
 
             if "/detect" in url:
-                return httpx.Response(
+                return create_mock_response(
                     200,
-                    json={
-                        "request_id": "test-id",
-                        "service_name": "layering" if "layering" in url else "wash_trading",
-                        "status": "success",
-                        "results": [],
-                        "error": None,
-                        "final_status": True,
-                    },
+                    create_algorithm_response(
+                        request_id=str(uuid4()),
+                        service_name="layering" if "layering" in url else "wash_trading",
+                        status="success",
+                        results=[],
+                        final_status=True,
+                    ).model_dump(),
+                    url,
                 )
 
             if "/aggregate" in url:
                 # Aggregator fails
-                return httpx.Response(
+                return create_mock_response(
                     500,
-                    json={"detail": "Aggregator service error"},
+                    {"detail": "Aggregator service error"},
+                    url,
                 )
 
-            return httpx.Response(404)
+            return create_mock_response(404, {}, url)
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_func:
             mock_post_func.side_effect = mock_post
@@ -712,4 +729,3 @@ class TestOrchestrateEndpoint:
         finally:
             if temp_path.exists():
                 temp_path.unlink()
-
