@@ -13,6 +13,7 @@ from layering_detection.detectors.layering_detector import (
     _query_events_in_window,
 )
 from layering_detection.utils.detection_utils import group_events_by_account_product
+from tests.fixtures import create_transaction_event, create_layering_pattern
 
 
 # Default config for tests (matches current hard-coded values)
@@ -113,70 +114,69 @@ class TestDetectorSyntheticPatterns:
     def test_synthetic_positive_pattern_for_new_account(self) -> None:
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
 
+        # Create layering pattern with custom parameters
+        # Note: Factory uses same quantity/price for all orders, so we'll create manually
         events = [
-            # Three BUY orders within 10 seconds
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC999",
                 product_id="TSLA",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC999",
                 product_id="TSLA",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC999",
                 product_id="TSLA",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            # Cancellations within 5 seconds of placement
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=3),
                 account_id="ACC999",
                 product_id="TSLA",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=4),
                 account_id="ACC999",
                 product_id="TSLA",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
                 account_id="ACC999",
                 product_id="TSLA",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            # Opposite-side trade within 2 seconds after last cancellation
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=6),
                 account_id="ACC999",
                 product_id="TSLA",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -204,68 +204,69 @@ class TestDetectorSyntheticPatterns:
     def test_synthetic_negative_pattern_trade_too_late(self) -> None:
         base = dt.datetime(2025, 1, 1, 9, 30, 0, tzinfo=dt.timezone.utc)
 
+        # Create layering pattern but with trade too late (outside 2-second window)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC888",
                 product_id="NFLX",
                 side="SELL",
-                price=Decimal("200.0"),
+                price="200.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC888",
                 product_id="NFLX",
                 side="SELL",
-                price=Decimal("199.5"),
+                price="199.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC888",
                 product_id="NFLX",
                 side="SELL",
-                price=Decimal("199.0"),
+                price="199.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=3),
                 account_id="ACC888",
                 product_id="NFLX",
                 side="SELL",
-                price=Decimal("200.0"),
+                price="200.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=4),
                 account_id="ACC888",
                 product_id="NFLX",
                 side="SELL",
-                price=Decimal("199.5"),
+                price="199.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
                 account_id="ACC888",
                 product_id="NFLX",
                 side="SELL",
-                price=Decimal("199.0"),
+                price="199.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            # Opposite-side trade occurs 5 seconds after last cancellation (too late)
-            TransactionEvent(
+            # Opposite-side trade occurs 10 seconds after last cancellation (too late)
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=10),
                 account_id="ACC888",
                 product_id="NFLX",
                 side="BUY",
-                price=Decimal("201.0"),
+                price="201.0",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -296,39 +297,31 @@ class TestBuildEventIndex:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
-                account_id="ACC001",
-                product_id="IBM",
                 side="SELL",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=3),
-                account_id="ACC001",
-                product_id="IBM",
                 side="SELL",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1500,
                 event_type="TRADE_EXECUTED",
             ),
@@ -352,30 +345,24 @@ class TestBuildEventIndex:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=3),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_PLACED",
             ),
@@ -396,30 +383,24 @@ class TestBuildEventIndex:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,  # Same timestamp
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,  # Same timestamp
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_PLACED",
             ),
@@ -439,21 +420,17 @@ class TestBuildEventIndex:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_CANCELLED",
             ),
@@ -493,12 +470,10 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
@@ -518,39 +493,31 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=8),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=15),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("102.0"),
+                price="102.0",
                 quantity=3000,
                 event_type="ORDER_PLACED",
             ),
@@ -573,30 +540,24 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,  # Same timestamp
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_PLACED",
             ),
@@ -617,21 +578,17 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
@@ -650,12 +607,10 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
@@ -679,12 +634,10 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=10),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
@@ -708,12 +661,10 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
@@ -737,30 +688,24 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=10),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_PLACED",
             ),
@@ -786,30 +731,24 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=100),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=500,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=200),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=2000,
                 event_type="ORDER_PLACED",
             ),
@@ -834,12 +773,10 @@ class TestQueryEventsInWindow:
         # Arrange
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(milliseconds=i),
-                account_id="ACC001",
-                product_id="IBM",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000 + i,
                 event_type="ORDER_PLACED",
             )
@@ -993,68 +930,68 @@ class TestDetectionConfigUsage:
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
             # Three BUY orders within 10 seconds (matches default)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC999",
                 product_id="TEST",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
                 account_id="ACC999",
                 product_id="TEST",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=9),  # Within 10s default window
                 account_id="ACC999",
                 product_id="TEST",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Cancellations
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=10),
                 account_id="ACC999",
                 product_id="TEST",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=11),
                 account_id="ACC999",
                 product_id="TEST",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=12),
                 account_id="ACC999",
                 product_id="TEST",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=13),
                 account_id="ACC999",
                 product_id="TEST",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1076,68 +1013,68 @@ class TestDetectionConfigUsage:
         # Arrange - Events with cancellations just outside default 5s window
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC888",
                 product_id="TEST2",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC888",
                 product_id="TEST2",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC888",
                 product_id="TEST2",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Last order at 2s, cancellations at 6s, 7s, 8s (outside 5s default window)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=6),
                 account_id="ACC888",
                 product_id="TEST2",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=7),
                 account_id="ACC888",
                 product_id="TEST2",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=8),
                 account_id="ACC888",
                 product_id="TEST2",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=9),
                 account_id="ACC888",
                 product_id="TEST2",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1159,68 +1096,68 @@ class TestDetectionConfigUsage:
         # Arrange - Events with opposite trade just outside default 2s window
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC777",
                 product_id="TEST3",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC777",
                 product_id="TEST3",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC777",
                 product_id="TEST3",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Cancellations
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=3),
                 account_id="ACC777",
                 product_id="TEST3",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=4),
                 account_id="ACC777",
                 product_id="TEST3",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
                 account_id="ACC777",
                 product_id="TEST3",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade at 8s (3s after last cancel, outside 2s default window)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=8),
                 account_id="ACC777",
                 product_id="TEST3",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1299,68 +1236,68 @@ class TestDetectionConfigEdgeCases:
         # Arrange - Events with orders at 0s, 5s, 10s (exactly 10s apart)
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=10),  # Exactly at boundary
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Cancellations
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=11),
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=12),
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=13),
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=14),
                 account_id="ACC666",
                 product_id="BOUNDARY",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1385,68 +1322,68 @@ class TestDetectionConfigEdgeCases:
         # With 4s cancel window: cancel_deadline = 6s (inclusive)
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Cancellations at 5.5s, 6s, 6.5s (all within 5s window from last order at 2s)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5, milliseconds=500),
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=6),
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=6, milliseconds=500),
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade within 2s after last cancel
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=7),
                 account_id="ACC555",
                 product_id="BOUNDARY2",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1470,68 +1407,68 @@ class TestDetectionConfigEdgeCases:
         # Arrange - Last cancel at 5s, trade at 7s (exactly 2s after)
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Cancellations
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=3),
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=4),
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=5),
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade at exactly 7s (2s after last cancel)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=7),  # Exactly 2s after last cancel
                 account_id="ACC444",
                 product_id="BOUNDARY3",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1617,41 +1554,41 @@ class TestIndexOptimizationUsage:
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
             # Three BUY orders
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base,
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=1),
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=2),
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
             # Many irrelevant ORDER_PLACED events (would slow down linear scan)
             *[
-                TransactionEvent(
+                create_transaction_event(
                     timestamp=base + dt.timedelta(seconds=3 + i * 0.1),
                     account_id="ACC_INDEX_TEST",
                     product_id="PROD1",
                     side="SELL",  # Different side
-                    price=Decimal("99.0"),
+                    price="99.0",
                     quantity=100,
                     event_type="ORDER_PLACED",
                 )
@@ -1660,40 +1597,40 @@ class TestIndexOptimizationUsage:
             # Cancellations (should be found quickly via index)
             # Last order at 2s, cancel_window=5s, so cancellations must be <= 7s
             # Also must be >= start_ts (0s)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=6),
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="BUY",
-                price=Decimal("100.0"),
+                price="100.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=6, milliseconds=500),
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="BUY",
-                price=Decimal("100.5"),
+                price="100.5",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=7),
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="BUY",
-                price=Decimal("101.0"),
+                price="101.0",
                 quantity=1000,
                 event_type="ORDER_CANCELLED",
             ),
             # Opposite-side trade (last cancel at 7s, trade_window=2s, so trade must be <= 9s)
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=8),
                 account_id="ACC_INDEX_TEST",
                 product_id="PROD1",
                 side="SELL",
-                price=Decimal("99.5"),
+                price="99.5",
                 quantity=5000,
                 event_type="TRADE_EXECUTED",
             ),
@@ -1714,18 +1651,18 @@ class TestIndexOptimizationUsage:
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
             # Three BUY orders
-            TransactionEvent(timestamp=base, account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=1), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=2), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("101.0"), quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base, account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="100.0", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=1), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="100.5", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=2), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="101.0", quantity=1000, event_type="ORDER_PLACED"),
             # Cancellations (last order at 2s, cancel_window=5s, so <= 7s)
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=6), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=6, milliseconds=500), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=7), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("101.0"), quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=6), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="100.0", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=6, milliseconds=500), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="100.5", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=7), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="101.0", quantity=1000, event_type="ORDER_CANCELLED"),
             # Opposite-side trade (last cancel at 7s, trade_window=2s, so <= 9s)
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=8), account_id="ACC_TRADE_TEST", product_id="PROD2", side="SELL", price=Decimal("99.5"), quantity=5000, event_type="TRADE_EXECUTED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=8), account_id="ACC_TRADE_TEST", product_id="PROD2", side="SELL", price="99.5", quantity=5000, event_type="TRADE_EXECUTED"),
             # Many irrelevant events AFTER trade (would slow down linear loop but not affect index)
             *[
-                TransactionEvent(timestamp=base + dt.timedelta(seconds=10 + i * 0.1), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price=Decimal("99.0"), quantity=100, event_type="ORDER_PLACED")
+                create_transaction_event(timestamp=base + dt.timedelta(seconds=10 + i * 0.1), account_id="ACC_TRADE_TEST", product_id="PROD2", side="BUY", price="99.0", quantity=100, event_type="ORDER_PLACED")
                 for i in range(50)
             ],
         ]
@@ -1746,23 +1683,23 @@ class TestIndexOptimizationUsage:
         
         # Pattern 1: ACC1, PROD1
         events.extend([
-            TransactionEvent(timestamp=base, account_id="ACC1", product_id="PROD1", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=1), account_id="ACC1", product_id="PROD1", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=2), account_id="ACC1", product_id="PROD1", side="BUY", price=Decimal("101.0"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=3), account_id="ACC1", product_id="PROD1", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=4), account_id="ACC1", product_id="PROD1", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=5), account_id="ACC1", product_id="PROD1", side="BUY", price=Decimal("101.0"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=6), account_id="ACC1", product_id="PROD1", side="SELL", price=Decimal("99.5"), quantity=5000, event_type="TRADE_EXECUTED"),
+            create_transaction_event(timestamp=base, account_id="ACC1", product_id="PROD1", side="BUY", price="100.0", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=1), account_id="ACC1", product_id="PROD1", side="BUY", price="100.5", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=2), account_id="ACC1", product_id="PROD1", side="BUY", price="101.0", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=3), account_id="ACC1", product_id="PROD1", side="BUY", price="100.0", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=4), account_id="ACC1", product_id="PROD1", side="BUY", price="100.5", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=5), account_id="ACC1", product_id="PROD1", side="BUY", price="101.0", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=6), account_id="ACC1", product_id="PROD1", side="SELL", price="99.5", quantity=5000, event_type="TRADE_EXECUTED"),
         ])
         
         # Many irrelevant events
         events.extend([
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base + dt.timedelta(seconds=10 + i * 0.1),
                 account_id="ACC_IRRELEVANT",
                 product_id="PROD_IRRELEVANT",
                 side="BUY",
-                price=Decimal("50.0"),
+                price="50.0",
                 quantity=100,
                 event_type="ORDER_PLACED",
             )
@@ -1772,13 +1709,13 @@ class TestIndexOptimizationUsage:
         # Pattern 2: ACC2, PROD2
         pattern2_start = base + dt.timedelta(seconds=30)
         events.extend([
-            TransactionEvent(timestamp=pattern2_start, account_id="ACC2", product_id="PROD2", side="BUY", price=Decimal("200.0"), quantity=2000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=pattern2_start + dt.timedelta(seconds=1), account_id="ACC2", product_id="PROD2", side="BUY", price=Decimal("200.5"), quantity=2000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=pattern2_start + dt.timedelta(seconds=2), account_id="ACC2", product_id="PROD2", side="BUY", price=Decimal("201.0"), quantity=2000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=pattern2_start + dt.timedelta(seconds=3), account_id="ACC2", product_id="PROD2", side="BUY", price=Decimal("200.0"), quantity=2000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=pattern2_start + dt.timedelta(seconds=4), account_id="ACC2", product_id="PROD2", side="BUY", price=Decimal("200.5"), quantity=2000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=pattern2_start + dt.timedelta(seconds=5), account_id="ACC2", product_id="PROD2", side="BUY", price=Decimal("201.0"), quantity=2000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=pattern2_start + dt.timedelta(seconds=6), account_id="ACC2", product_id="PROD2", side="SELL", price=Decimal("199.5"), quantity=10000, event_type="TRADE_EXECUTED"),
+            create_transaction_event(timestamp=pattern2_start, account_id="ACC2", product_id="PROD2", side="BUY", price="200.0", quantity=2000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=pattern2_start + dt.timedelta(seconds=1), account_id="ACC2", product_id="PROD2", side="BUY", price="200.5", quantity=2000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=pattern2_start + dt.timedelta(seconds=2), account_id="ACC2", product_id="PROD2", side="BUY", price="201.0", quantity=2000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=pattern2_start + dt.timedelta(seconds=3), account_id="ACC2", product_id="PROD2", side="BUY", price="200.0", quantity=2000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=pattern2_start + dt.timedelta(seconds=4), account_id="ACC2", product_id="PROD2", side="BUY", price="200.5", quantity=2000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=pattern2_start + dt.timedelta(seconds=5), account_id="ACC2", product_id="PROD2", side="BUY", price="201.0", quantity=2000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=pattern2_start + dt.timedelta(seconds=6), account_id="ACC2", product_id="PROD2", side="SELL", price="199.5", quantity=10000, event_type="TRADE_EXECUTED"),
         ])
 
         # Act
@@ -1807,11 +1744,11 @@ class TestIndexOptimizationUsage:
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
             # Only 2 orders (need 3)
-            TransactionEvent(timestamp=base, account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=1), account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base, account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price="100.0", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=1), account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price="100.5", quantity=1000, event_type="ORDER_PLACED"),
             # Only 2 cancellations (need 3)
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=2), account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=3), account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=2), account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price="100.0", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=3), account_id="ACC_NO_PATTERN", product_id="PROD1", side="BUY", price="100.5", quantity=1000, event_type="ORDER_CANCELLED"),
             # No opposite trade
         ]
 
@@ -1827,15 +1764,15 @@ class TestIndexOptimizationUsage:
         base = dt.datetime(2025, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
         events = [
             # Orders
-            TransactionEvent(timestamp=base, account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=1), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_PLACED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=2), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price=Decimal("101.0"), quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base, account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price="100.0", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=1), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price="100.5", quantity=1000, event_type="ORDER_PLACED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=2), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price="101.0", quantity=1000, event_type="ORDER_PLACED"),
             # Cancellations (last order at 2s, cancel_window=5s, so <= 7s)
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=6), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price=Decimal("100.0"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=6, milliseconds=500), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price=Decimal("100.5"), quantity=1000, event_type="ORDER_CANCELLED"),
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=7), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price=Decimal("101.0"), quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=6), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price="100.0", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=6, milliseconds=500), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price="100.5", quantity=1000, event_type="ORDER_CANCELLED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=7), account_id="ACC_BOUNDARY", product_id="PROD1", side="BUY", price="101.0", quantity=1000, event_type="ORDER_CANCELLED"),
             # Trade (last cancel at 7s, trade_window=2s, so <= 9s)
-            TransactionEvent(timestamp=base + dt.timedelta(seconds=8), account_id="ACC_BOUNDARY", product_id="PROD1", side="SELL", price=Decimal("99.5"), quantity=5000, event_type="TRADE_EXECUTED"),
+            create_transaction_event(timestamp=base + dt.timedelta(seconds=8), account_id="ACC_BOUNDARY", product_id="PROD1", side="SELL", price="99.5", quantity=5000, event_type="TRADE_EXECUTED"),
         ]
 
         # Act
