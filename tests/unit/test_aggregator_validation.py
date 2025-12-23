@@ -6,11 +6,10 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from uuid import uuid4
-
 import pytest
 
 from services.shared.api_models import AlgorithmResponse
+from tests.fixtures import create_algorithm_response
 
 # Import validation module (handles hyphenated directory name)
 project_root = Path(__file__).parent.parent.parent
@@ -27,20 +26,16 @@ class TestValidateCompleteness:
     def test_validation_success_all_services_complete(self) -> None:
         """Test validation passes when all expected services are present and complete."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="wash_trading",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
         ]
@@ -51,12 +46,10 @@ class TestValidateCompleteness:
     def test_validation_fails_missing_service(self) -> None:
         """Test validation fails when expected service is missing."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
         ]
@@ -73,12 +66,10 @@ class TestValidateCompleteness:
     def test_validation_fails_multiple_missing_services(self) -> None:
         """Test validation fails when multiple expected services are missing."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
         ]
@@ -94,20 +85,16 @@ class TestValidateCompleteness:
     def test_validation_fails_incomplete_service(self) -> None:
         """Test validation fails when service has final_status=False."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=False,  # Still retrying
             ),
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="wash_trading",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
         ]
@@ -123,20 +110,16 @@ class TestValidateCompleteness:
     def test_validation_fails_multiple_incomplete_services(self) -> None:
         """Test validation fails when multiple services have final_status=False."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=False,
             ),
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="wash_trading",
                 status="success",
                 results=[],
-                error=None,
                 final_status=False,
             ),
         ]
@@ -152,12 +135,10 @@ class TestValidateCompleteness:
     def test_validation_fails_both_missing_and_incomplete(self) -> None:
         """Test validation fails when both missing and incomplete services exist."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=False,  # Incomplete
             ),
             # wash_trading is missing
@@ -174,20 +155,17 @@ class TestValidateCompleteness:
     def test_validation_success_with_failed_service_but_final_status_true(self) -> None:
         """Test validation passes when service failed but has final_status=True (retries exhausted)."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="failure",
                 results=None,
                 error="Service error",
                 final_status=True,  # Retries exhausted, considered complete
             ),
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="wash_trading",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
         ]
@@ -210,20 +188,16 @@ class TestValidateCompleteness:
         # Note: AlgorithmResponse validates service_name, so we can't test with invalid service names
         # Instead, we test that validation passes when all expected services are present
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="wash_trading",
                 status="success",
                 results=[],
-                error=None,
                 final_status=True,
             ),
         ]
@@ -234,12 +208,10 @@ class TestValidateCompleteness:
     def test_validation_error_message_format(self) -> None:
         """Test error message format includes all necessary information."""
         results = [
-            AlgorithmResponse(
-                request_id=str(uuid4()),
+            create_algorithm_response(
                 service_name="layering",
                 status="success",
                 results=[],
-                error=None,
                 final_status=False,
             ),
         ]
