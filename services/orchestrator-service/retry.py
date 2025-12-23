@@ -7,6 +7,7 @@ Implements retry logic for algorithm service calls with exponential backoff.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -38,6 +39,197 @@ get_max_retries = orchestrator_config.get_max_retries
 get_timeout_seconds = orchestrator_config.get_timeout_seconds
 
 logger = get_logger(__name__)
+
+
+def _handle_retry_error(
+    error: Exception,
+    error_type: str,
+    service_name: str,
+    request_id: str,
+    attempt: int,
+    max_retries: int,
+    logger_instance: logging.Logger,
+    status_code: int | None = None,
+) -> tuple[bool, int | None]:
+    """
+    Handle retry error logic for transient errors (TimeoutError, ConnectionError, HTTP 5xx).
+
+    Determines if a retry should be attempted and calculates the exponential backoff delay.
+    Logs appropriate warning message for the error type.
+
+    Args:
+        error: The exception that occurred
+        error_type: Type of error ("timeout", "connection", "http_5xx")
+        service_name: Service name ("layering" or "wash_trading")
+        request_id: UUID request identifier
+        attempt: Current attempt number (0-indexed)
+        max_retries: Maximum number of retry attempts
+        logger_instance: Logger instance for logging messages
+        status_code: HTTP status code (only for HTTP errors, None otherwise)
+
+    Returns:
+        Tuple of (should_retry: bool, backoff_seconds: int | None):
+        - should_retry: True if retry should be attempted, False if retries exhausted
+        - backoff_seconds: Exponential backoff delay in seconds (2^attempt), or None if no retry
+
+    Examples:
+        >>> should_retry, backoff = _handle_retry_error(
+        ...     error=TimeoutError("Request timed out"),
+        ...     error_type="timeout",
+        ...     service_name="layering",
+        ...     request_id="abc-123",
+        ...     attempt=0,
+        ...     max_retries=3,
+        ...     logger_instance=logger,
+        ... )
+        >>> should_retry
+        True
+        >>> backoff
+        1
+    """
+    # Check if retries are exhausted
+    if attempt >= max_retries:
+        return False, None
+
+    # Calculate exponential backoff: 2^attempt seconds (1s, 2s, 4s, ...)
+    backoff_seconds = 2**attempt
+
+    # Generate appropriate log message based on error type
+    if error_type == "timeout":
+        log_message = (
+            f"Algorithm service call timed out, retrying: "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"attempt={attempt + 1}/{max_retries + 1}, "
+            f"backoff={backoff_seconds}s"
+        )
+    elif error_type == "connection":
+        log_message = (
+            f"Algorithm service connection failed, retrying: "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"attempt={attempt + 1}/{max_retries + 1}, "
+            f"backoff={backoff_seconds}s"
+        )
+    elif error_type == "http_5xx":
+        if status_code is None:
+            raise ValueError("status_code must be provided for http_5xx error type")
+        log_message = (
+            f"Algorithm service returned 5xx error, retrying: "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"status_code={status_code}, "
+            f"attempt={attempt + 1}/{max_retries + 1}, "
+            f"backoff={backoff_seconds}s"
+        )
+    else:
+        raise ValueError(f"Unknown error_type: {error_type}")
+
+    # Log warning message
+    logger_instance.warning(
+        log_message,
+        extra={"request_id": request_id},
+    )
+
+    return True, backoff_seconds
+
+
+def _handle_exhaustion(
+    error: Exception,
+    error_type: str,
+    service_name: str,
+    request_id: str,
+    attempt: int,
+    service_status: dict[str, dict],
+    logger_instance: logging.Logger,
+    status_code: int | None = None,
+) -> None:
+    """
+    Handle exhaustion logic when retries are exhausted or error is non-retryable.
+
+    Updates service_status dict with exhaustion state and logs appropriate error message.
+    Used by all exception handlers when retries are exhausted or error should not be retried.
+
+    Args:
+        error: The exception that occurred
+        error_type: Type of error ("timeout", "connection", "http_5xx", "http_4xx", "unexpected")
+        service_name: Service name ("layering" or "wash_trading")
+        request_id: UUID request identifier
+        attempt: Current attempt number (0-indexed)
+        service_status: Dict to update with service status (modified in-place)
+        logger_instance: Logger instance for logging messages
+        status_code: HTTP status code (only for HTTP errors, None otherwise)
+
+    Examples:
+        >>> service_status = {}
+        >>> _handle_exhaustion(
+        ...     error=TimeoutError("Request timed out"),
+        ...     error_type="timeout",
+        ...     service_name="layering",
+        ...     request_id="abc-123",
+        ...     attempt=3,
+        ...     service_status=service_status,
+        ...     logger_instance=logger,
+        ... )
+        >>> service_status["layering"]["status"]
+        'exhausted'
+    """
+    # Format error message (include HTTP status code for HTTP errors)
+    if status_code is not None:
+        error_message = f"HTTP {status_code}: {str(error)}"
+    else:
+        error_message = str(error)
+
+    # Update service_status with exhaustion state
+    service_status[service_name] = {
+        "status": "exhausted",
+        "final_status": True,
+        "result": None,
+        "error": error_message,
+        "retry_count": attempt + 1,
+    }
+
+    # Generate appropriate log message based on error type
+    if error_type == "timeout":
+        log_message = (
+            f"Algorithm service call exhausted retries (timeout): "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"retry_count={attempt + 1}"
+        )
+    elif error_type == "connection":
+        log_message = (
+            f"Algorithm service call exhausted retries (connection error): "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"retry_count={attempt + 1}"
+        )
+    elif error_type == "http_5xx":
+        if status_code is None:
+            raise ValueError("status_code must be provided for http_5xx error type")
+        log_message = (
+            f"Algorithm service call exhausted retries (5xx error): "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"status_code={status_code}, retry_count={attempt + 1}"
+        )
+    elif error_type == "http_4xx":
+        if status_code is None:
+            raise ValueError("status_code must be provided for http_4xx error type")
+        log_message = (
+            f"Algorithm service returned 4xx error (no retry): "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"status_code={status_code}"
+        )
+    elif error_type == "unexpected":
+        log_message = (
+            f"Algorithm service call failed with unexpected error (no retry): "
+            f"service_name={service_name}, request_id={request_id}, "
+            f"error={error_message}"
+        )
+    else:
+        raise ValueError(f"Unknown error_type: {error_type}")
+
+    # Log error message with exception info
+    logger_instance.error(
+        log_message,
+        extra={"request_id": request_id},
+        exc_info=True,
+    )
 
 
 async def process_with_retries(
@@ -136,65 +328,55 @@ async def process_with_retries(
 
         except TimeoutError as e:
             # Timeout error - retry if attempts remaining
-            if attempt < max_retries:
-                backoff_seconds = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                logger.warning(
-                    f"Algorithm service call timed out, retrying: "
-                    f"service_name={service_name}, request_id={request_id}, "
-                    f"attempt={attempt + 1}/{max_retries + 1}, "
-                    f"backoff={backoff_seconds}s",
-                    extra={"request_id": request_id},
-                )
+            should_retry, backoff_seconds = _handle_retry_error(
+                error=e,
+                error_type="timeout",
+                service_name=service_name,
+                request_id=request_id,
+                attempt=attempt,
+                max_retries=max_retries,
+                logger_instance=logger,
+            )
+            if should_retry:
                 await asyncio.sleep(backoff_seconds)
                 continue
-            else:
-                # Retries exhausted
-                service_status[service_name] = {
-                    "status": "exhausted",
-                    "final_status": True,
-                    "result": None,
-                    "error": str(e),
-                    "retry_count": attempt + 1,
-                }
-                logger.error(
-                    f"Algorithm service call exhausted retries (timeout): "
-                    f"service_name={service_name}, request_id={request_id}, "
-                    f"retry_count={attempt + 1}",
-                    extra={"request_id": request_id},
-                    exc_info=True,
-                )
-                return
+            # Retries exhausted
+            _handle_exhaustion(
+                error=e,
+                error_type="timeout",
+                service_name=service_name,
+                request_id=request_id,
+                attempt=attempt,
+                service_status=service_status,
+                logger_instance=logger,
+            )
+            return
 
         except ConnectionError as e:
             # Connection error - retry if attempts remaining
-            if attempt < max_retries:
-                backoff_seconds = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                logger.warning(
-                    f"Algorithm service connection failed, retrying: "
-                    f"service_name={service_name}, request_id={request_id}, "
-                    f"attempt={attempt + 1}/{max_retries + 1}, "
-                    f"backoff={backoff_seconds}s",
-                    extra={"request_id": request_id},
-                )
+            should_retry, backoff_seconds = _handle_retry_error(
+                error=e,
+                error_type="connection",
+                service_name=service_name,
+                request_id=request_id,
+                attempt=attempt,
+                max_retries=max_retries,
+                logger_instance=logger,
+            )
+            if should_retry:
                 await asyncio.sleep(backoff_seconds)
                 continue
-            else:
-                # Retries exhausted
-                service_status[service_name] = {
-                    "status": "exhausted",
-                    "final_status": True,
-                    "result": None,
-                    "error": str(e),
-                    "retry_count": attempt + 1,
-                }
-                logger.error(
-                    f"Algorithm service call exhausted retries (connection error): "
-                    f"service_name={service_name}, request_id={request_id}, "
-                    f"retry_count={attempt + 1}",
-                    extra={"request_id": request_id},
-                    exc_info=True,
-                )
-                return
+            # Retries exhausted
+            _handle_exhaustion(
+                error=e,
+                error_type="connection",
+                service_name=service_name,
+                request_id=request_id,
+                attempt=attempt,
+                service_status=service_status,
+                logger_instance=logger,
+            )
+            return
 
         except httpx.HTTPStatusError as e:
             # HTTP error - check if 5xx (retry) or 4xx (no retry)
@@ -202,68 +384,55 @@ async def process_with_retries(
 
             if 500 <= status_code < 600:
                 # 5xx error - retry if attempts remaining
-                if attempt < max_retries:
-                    backoff_seconds = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                    logger.warning(
-                        f"Algorithm service returned 5xx error, retrying: "
-                        f"service_name={service_name}, request_id={request_id}, "
-                        f"status_code={status_code}, "
-                        f"attempt={attempt + 1}/{max_retries + 1}, "
-                        f"backoff={backoff_seconds}s",
-                        extra={"request_id": request_id},
-                    )
+                should_retry, backoff_seconds = _handle_retry_error(
+                    error=e,
+                    error_type="http_5xx",
+                    service_name=service_name,
+                    request_id=request_id,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    logger_instance=logger,
+                    status_code=status_code,
+                )
+                if should_retry:
                     await asyncio.sleep(backoff_seconds)
                     continue
-                else:
-                    # Retries exhausted
-                    service_status[service_name] = {
-                        "status": "exhausted",
-                        "final_status": True,
-                        "result": None,
-                        "error": f"HTTP {status_code}: {str(e)}",
-                        "retry_count": attempt + 1,
-                    }
-                    logger.error(
-                        f"Algorithm service call exhausted retries (5xx error): "
-                        f"service_name={service_name}, request_id={request_id}, "
-                        f"status_code={status_code}, retry_count={attempt + 1}",
-                        extra={"request_id": request_id},
-                        exc_info=True,
-                    )
-                    return
+                # Retries exhausted
+                _handle_exhaustion(
+                    error=e,
+                    error_type="http_5xx",
+                    service_name=service_name,
+                    request_id=request_id,
+                    attempt=attempt,
+                    service_status=service_status,
+                    logger_instance=logger,
+                    status_code=status_code,
+                )
+                return
             else:
                 # 4xx error - do not retry (client error)
-                service_status[service_name] = {
-                    "status": "exhausted",
-                    "final_status": True,
-                    "result": None,
-                    "error": f"HTTP {status_code}: {str(e)}",
-                    "retry_count": attempt + 1,
-                }
-                logger.error(
-                    f"Algorithm service returned 4xx error (no retry): "
-                    f"service_name={service_name}, request_id={request_id}, "
-                    f"status_code={status_code}",
-                    extra={"request_id": request_id},
-                    exc_info=True,
+                _handle_exhaustion(
+                    error=e,
+                    error_type="http_4xx",
+                    service_name=service_name,
+                    request_id=request_id,
+                    attempt=attempt,
+                    service_status=service_status,
+                    logger_instance=logger,
+                    status_code=status_code,
                 )
                 return
 
         except Exception as e:
             # Unexpected error - do not retry
-            service_status[service_name] = {
-                "status": "exhausted",
-                "final_status": True,
-                "result": None,
-                "error": str(e),
-                "retry_count": attempt + 1,
-            }
-            logger.error(
-                f"Algorithm service call failed with unexpected error (no retry): "
-                f"service_name={service_name}, request_id={request_id}, "
-                f"error={str(e)}",
-                extra={"request_id": request_id},
-                exc_info=True,
+            _handle_exhaustion(
+                error=e,
+                error_type="unexpected",
+                service_name=service_name,
+                request_id=request_id,
+                attempt=attempt,
+                service_status=service_status,
+                logger_instance=logger,
             )
             return
 
