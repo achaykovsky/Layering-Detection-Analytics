@@ -16,6 +16,7 @@ import pytest
 
 from layering_detection.models import TransactionEvent
 from services.shared.api_models import AlgorithmResponse
+from tests.fixtures import create_transaction_event
 
 # Import orchestrator module (handles hyphenated directory name)
 project_root = Path(__file__).parent.parent.parent
@@ -36,7 +37,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
@@ -109,7 +110,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
@@ -186,7 +187,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
@@ -245,7 +246,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
@@ -320,7 +321,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
@@ -392,7 +393,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
@@ -462,7 +463,7 @@ class TestCallAllAlgorithmServices:
         request_id = str(uuid4())
         event_fingerprint = "a" * 64
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2024, 1, 1, 0, 0, 0),
                 account_id="acc1",
                 product_id="IBM",
