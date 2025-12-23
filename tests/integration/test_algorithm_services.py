@@ -228,13 +228,23 @@ class TestLayeringServiceDetectEndpoint:
         self,
         layering_client: TestClient,
     ) -> None:
-        """Test detect endpoint with empty events returns success with empty results."""
-        # Arrange
-        request_id = str(uuid4())
-        request = AlgorithmRequest(
-            request_id=request_id,
+        """Test detect endpoint with events that produce no suspicious sequences returns success with empty results."""
+        # Arrange - Use events that won't produce suspicious sequences
+        from tests.fixtures import create_transaction_event_dto, create_algorithm_request
+
+        request = create_algorithm_request(
             event_fingerprint="c" * 64,
-            events=[],  # Empty events list
+            events=[
+                create_transaction_event_dto(
+                    timestamp="2025-01-15T10:30:00",
+                    account_id="ACC001",
+                    product_id="IBM",
+                    side="BUY",
+                    price="100.50",
+                    quantity=100,  # Small quantity, won't trigger layering detection
+                    event_type="ORDER_PLACED",
+                )
+            ],
         )
 
         # Act
@@ -272,7 +282,7 @@ class TestLayeringServiceDetectEndpoint:
         # Act
         response = layering_client.post(
             "/detect",
-            data="not json",
+            content="not json",
             headers={"Content-Type": "application/json"},
         )
 
@@ -314,13 +324,23 @@ class TestWashTradingServiceDetectEndpoint:
         self,
         wash_trading_client: TestClient,
     ) -> None:
-        """Test detect endpoint with empty events returns success with empty results."""
-        # Arrange
-        request_id = str(uuid4())
-        request = AlgorithmRequest(
-            request_id=request_id,
+        """Test detect endpoint with events that produce no suspicious sequences returns success with empty results."""
+        # Arrange - Use events that won't produce suspicious sequences
+        from tests.fixtures import create_transaction_event_dto, create_algorithm_request
+
+        request = create_algorithm_request(
             event_fingerprint="e" * 64,
-            events=[],
+            events=[
+                create_transaction_event_dto(
+                    timestamp="2025-01-15T10:30:00",
+                    account_id="ACC001",
+                    product_id="IBM",
+                    side="BUY",
+                    price="100.50",
+                    quantity=100,  # Small quantity, won't trigger wash trading detection
+                    event_type="TRADE_EXECUTED",
+                )
+            ],
         )
 
         # Act
@@ -377,7 +397,7 @@ class TestIdempotency:
         """Test Wash Trading Service returns cached result for duplicate request_id + fingerprint."""
         # Arrange
         request_id = str(uuid4())
-        fingerprint = "g" * 64
+        fingerprint = "0" * 64  # Valid hex character
         request = AlgorithmRequest(
             request_id=request_id,
             event_fingerprint=fingerprint,
@@ -409,12 +429,12 @@ class TestIdempotency:
         request_id = str(uuid4())
         request1 = AlgorithmRequest(
             request_id=request_id,
-            event_fingerprint="h" * 64,
+            event_fingerprint="1" * 64,  # Valid hex character
             events=sample_layering_events,
         )
         request2 = AlgorithmRequest(
             request_id=request_id,  # Same request_id
-            event_fingerprint="i" * 64,  # Different fingerprint
+            event_fingerprint="2" * 64,  # Different fingerprint (valid hex character)
             events=sample_layering_events,
         )
 
@@ -436,7 +456,7 @@ class TestIdempotency:
     ) -> None:
         """Test Wash Trading Service cache miss when request_id differs."""
         # Arrange
-        fingerprint = "j" * 64
+        fingerprint = "3" * 64  # Valid hex character
         request1 = AlgorithmRequest(
             request_id=str(uuid4()),
             event_fingerprint=fingerprint,
@@ -465,50 +485,64 @@ class TestErrorHandling:
         layering_client: TestClient,
     ) -> None:
         """Test Layering Service handles algorithm exceptions gracefully."""
-        # Arrange - Create events that might cause issues
-        # Using invalid data that could cause algorithm to fail
-        request_id = str(uuid4())
-        # Empty events should not cause exception, but let's test with minimal data
-        request = AlgorithmRequest(
-            request_id=request_id,
-            event_fingerprint="k" * 64,
-            events=[],  # Empty events - algorithm should handle this
+        # Arrange - Use events that won't trigger detection (minimal data)
+        from tests.fixtures import create_transaction_event_dto, create_algorithm_request
+
+        request = create_algorithm_request(
+            event_fingerprint="4" * 64,  # Valid hex character
+            events=[
+                create_transaction_event_dto(
+                    timestamp="2025-01-15T10:30:00",
+                    account_id="ACC001",
+                    product_id="IBM",
+                    side="BUY",
+                    price="100.50",
+                    quantity=100,  # Small quantity, won't trigger layering
+                    event_type="ORDER_PLACED",
+                )
+            ],
         )
 
         # Act
         response = layering_client.post("/detect", json=request.model_dump())
 
-        # Assert - Should return success with empty results, not failure
+        # Assert - Should return success with empty results
         assert response.status_code == 200
         data = response.json()
-        # Algorithm should handle empty events gracefully
-        assert data["status"] in ("success", "failure")
-        # If success, results should be empty list
-        if data["status"] == "success":
-            assert data["results"] == []
+        assert data["status"] == "success"
+        assert data["results"] == []
 
     def test_wash_trading_service_handles_algorithm_exception(
         self,
         wash_trading_client: TestClient,
     ) -> None:
         """Test Wash Trading Service handles algorithm exceptions gracefully."""
-        # Arrange
-        request_id = str(uuid4())
-        request = AlgorithmRequest(
-            request_id=request_id,
-            event_fingerprint="l" * 64,
-            events=[],  # Empty events
+        # Arrange - Use events that won't trigger detection (minimal data)
+        from tests.fixtures import create_transaction_event_dto, create_algorithm_request
+
+        request = create_algorithm_request(
+            event_fingerprint="5" * 64,  # Valid hex character
+            events=[
+                create_transaction_event_dto(
+                    timestamp="2025-01-15T10:30:00",
+                    account_id="ACC001",
+                    product_id="IBM",
+                    side="BUY",
+                    price="100.50",
+                    quantity=100,  # Small quantity, won't trigger wash trading
+                    event_type="TRADE_EXECUTED",
+                )
+            ],
         )
 
         # Act
         response = wash_trading_client.post("/detect", json=request.model_dump())
 
-        # Assert
+        # Assert - Should return success with empty results
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] in ("success", "failure")
-        if data["status"] == "success":
-            assert data["results"] == []
+        assert data["status"] == "success"
+        assert data["results"] == []
 
     def test_layering_service_invalid_event_data_returns_validation_error(
         self,
@@ -580,7 +614,7 @@ class TestCacheBehavior:
         """Test cache is isolated per service instance."""
         # Arrange
         request_id = str(uuid4())
-        fingerprint = "o" * 64
+        fingerprint = "6" * 64  # Valid hex character
         request = AlgorithmRequest(
             request_id=request_id,
             event_fingerprint=fingerprint,
@@ -609,7 +643,7 @@ class TestCacheBehavior:
         """Test cache handles multiple concurrent requests correctly."""
         # Arrange
         request_id = str(uuid4())
-        fingerprint = "p" * 64
+        fingerprint = "7" * 64  # Valid hex character
         request = AlgorithmRequest(
             request_id=request_id,
             event_fingerprint=fingerprint,
