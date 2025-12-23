@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from layering_detection.models import TransactionEvent
 from services.shared.api_models import AlgorithmRequest, TransactionEventDTO
+from tests.fixtures import create_transaction_event
 
 # Import apps after setting up path
 project_root = Path(__file__).parent.parent.parent
@@ -65,7 +66,7 @@ def sample_events() -> list[TransactionEvent]:
     """Create sample TransactionEvent list for testing."""
     base_time = datetime(2025, 1, 15, 10, 0, 0)
     return [
-        TransactionEvent(
+        create_transaction_event(
             timestamp=base_time,
             account_id="ACC001",
             product_id="IBM",
@@ -74,7 +75,7 @@ def sample_events() -> list[TransactionEvent]:
             quantity=1000,
             event_type="ORDER_PLACED",
         ),
-        TransactionEvent(
+        create_transaction_event(
             timestamp=base_time + timedelta(minutes=1),
             account_id="ACC001",
             product_id="IBM",
@@ -83,7 +84,7 @@ def sample_events() -> list[TransactionEvent]:
             quantity=2000,
             event_type="ORDER_PLACED",
         ),
-        TransactionEvent(
+        create_transaction_event(
             timestamp=base_time + timedelta(minutes=2),
             account_id="ACC001",
             product_id="IBM",
@@ -100,7 +101,7 @@ def sample_events_different() -> list[TransactionEvent]:
     """Create different sample TransactionEvent list for testing."""
     base_time = datetime(2025, 1, 15, 11, 0, 0)
     return [
-        TransactionEvent(
+        create_transaction_event(
             timestamp=base_time,
             account_id="ACC002",
             product_id="GOOG",
@@ -411,7 +412,7 @@ class TestAlgorithmServiceCache:
         # Arrange - Create realistic events
         base_time = datetime(2025, 1, 15, 10, 0, 0)
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=i),
                 account_id=f"ACC{i % 3 + 1:03d}",
                 product_id="IBM",
