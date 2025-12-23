@@ -22,6 +22,7 @@ from services.shared.api_models import (
     SuspiciousSequenceDTO,
     TransactionEventDTO,
 )
+from tests.fixtures import create_transaction_event_dto, create_algorithm_request
 
 
 class TestTransactionEventDTO:
@@ -29,7 +30,7 @@ class TestTransactionEventDTO:
 
     def test_valid_transaction_event(self) -> None:
         """Test creating valid TransactionEventDTO."""
-        event = TransactionEventDTO(
+        event = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -45,7 +46,7 @@ class TestTransactionEventDTO:
     def test_invalid_timestamp_format(self) -> None:
         """Test invalid timestamp format raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="invalid-date",
                 account_id="ACC001",
                 product_id="IBM",
@@ -59,7 +60,7 @@ class TestTransactionEventDTO:
     def test_invalid_price_decimal(self) -> None:
         """Test invalid price format raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="ACC001",
                 product_id="IBM",
@@ -73,7 +74,7 @@ class TestTransactionEventDTO:
     def test_negative_quantity(self) -> None:
         """Test negative quantity raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="ACC001",
                 product_id="IBM",
@@ -87,7 +88,7 @@ class TestTransactionEventDTO:
     def test_invalid_side_literal(self) -> None:
         """Test invalid side value raises ValidationError."""
         with pytest.raises(ValidationError):
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="ACC001",
                 product_id="IBM",
@@ -100,7 +101,7 @@ class TestTransactionEventDTO:
     def test_invalid_event_type_literal(self) -> None:
         """Test invalid event_type value raises ValidationError."""
         with pytest.raises(ValidationError):
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="ACC001",
                 product_id="IBM",
@@ -113,7 +114,7 @@ class TestTransactionEventDTO:
     def test_empty_account_id(self) -> None:
         """Test empty account_id raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="",
                 product_id="IBM",
@@ -127,7 +128,7 @@ class TestTransactionEventDTO:
     def test_zero_quantity(self) -> None:
         """Test zero quantity raises ValidationError (must be > 0)."""
         with pytest.raises(ValidationError) as exc_info:
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="ACC001",
                 product_id="IBM",
@@ -140,7 +141,7 @@ class TestTransactionEventDTO:
 
     def test_datetime_with_milliseconds(self) -> None:
         """Test datetime with milliseconds is accepted."""
-        event = TransactionEventDTO(
+        event = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00.123",
             account_id="ACC001",
             product_id="IBM",
@@ -153,7 +154,7 @@ class TestTransactionEventDTO:
 
     def test_price_with_leading_zero(self) -> None:
         """Test price with leading zero is accepted."""
-        event = TransactionEventDTO(
+        event = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -167,7 +168,7 @@ class TestTransactionEventDTO:
     def test_price_negative(self) -> None:
         """Test negative price is accepted (Decimal allows negatives)."""
         # Negative prices are valid Decimal values, so they should be accepted
-        event = TransactionEventDTO(
+        event = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -180,7 +181,7 @@ class TestTransactionEventDTO:
 
     def test_json_serialization(self) -> None:
         """Test JSON serialization preserves data."""
-        event = TransactionEventDTO(
+        event = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -308,7 +309,7 @@ class TestAlgorithmRequest:
         request_id = str(uuid4())
         fingerprint = "a" * 64  # Valid SHA256 hexdigest
         events = [
-            TransactionEventDTO(
+            create_transaction_event_dto(
                 timestamp="2025-01-15T10:30:00",
                 account_id="ACC001",
                 product_id="IBM",
@@ -318,7 +319,7 @@ class TestAlgorithmRequest:
                 event_type="ORDER_PLACED",
             )
         ]
-        request = AlgorithmRequest(
+        request = create_algorithm_request(
             request_id=request_id,
             event_fingerprint=fingerprint,
             events=events,
@@ -330,7 +331,7 @@ class TestAlgorithmRequest:
     def test_invalid_uuid_format(self) -> None:
         """Test invalid UUID format raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            AlgorithmRequest(
+            create_algorithm_request(
                 request_id="not-a-uuid",
                 event_fingerprint="a" * 64,
                 events=[],
@@ -340,7 +341,7 @@ class TestAlgorithmRequest:
     def test_invalid_fingerprint_length(self) -> None:
         """Test invalid fingerprint length raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            AlgorithmRequest(
+            create_algorithm_request(
                 request_id=str(uuid4()),
                 event_fingerprint="short",  # Not 64 chars
                 events=[],
@@ -350,7 +351,7 @@ class TestAlgorithmRequest:
     def test_invalid_fingerprint_characters(self) -> None:
         """Test invalid fingerprint characters raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            AlgorithmRequest(
+            create_algorithm_request(
                 request_id=str(uuid4()),
                 event_fingerprint="G" * 64,  # Invalid hex character
                 events=[],
@@ -360,7 +361,7 @@ class TestAlgorithmRequest:
     def test_empty_events_list(self) -> None:
         """Test empty events list raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            AlgorithmRequest(
+            create_algorithm_request(
                 request_id=str(uuid4()),
                 event_fingerprint="a" * 64,
                 events=[],
@@ -369,11 +370,11 @@ class TestAlgorithmRequest:
 
     def test_fingerprint_case_normalization(self) -> None:
         """Test fingerprint is normalized to lowercase."""
-        request = AlgorithmRequest(
+        request = create_algorithm_request(
             request_id=str(uuid4()),
             event_fingerprint="A" * 64,  # Uppercase
             events=[
-                TransactionEventDTO(
+                create_transaction_event_dto(
                     timestamp="2025-01-15T10:30:00",
                     account_id="ACC001",
                     product_id="IBM",
@@ -687,7 +688,7 @@ class TestJSONSerialization:
 
     def test_transaction_event_json_roundtrip(self) -> None:
         """Test TransactionEventDTO JSON roundtrip."""
-        event = TransactionEventDTO(
+        event = create_transaction_event_dto(
             timestamp="2025-01-15T10:30:00",
             account_id="ACC001",
             product_id="IBM",
@@ -704,11 +705,11 @@ class TestJSONSerialization:
     def test_algorithm_request_json_roundtrip(self) -> None:
         """Test AlgorithmRequest JSON roundtrip."""
         request_id = str(uuid4())
-        request = AlgorithmRequest(
+        request = create_algorithm_request(
             request_id=request_id,
             event_fingerprint="a" * 64,
             events=[
-                TransactionEventDTO(
+                create_transaction_event_dto(
                     timestamp="2025-01-15T10:30:00",
                     account_id="ACC001",
                     product_id="IBM",
@@ -810,11 +811,11 @@ class TestJSONSerialization:
 
     def test_json_with_empty_lists(self) -> None:
         """Test JSON serialization handles empty lists correctly."""
-        request = AlgorithmRequest(
+        request = create_algorithm_request(
             request_id=str(uuid4()),
             event_fingerprint="a" * 64,
             events=[
-                TransactionEventDTO(
+                create_transaction_event_dto(
                     timestamp="2025-01-15T10:30:00",
                     account_id="ACC001",
                     product_id="IBM",
