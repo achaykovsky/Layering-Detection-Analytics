@@ -217,34 +217,14 @@ def _detect_wash_trading_for_group(
     for start_idx in range(len(trades)):
         start_trade = trades[start_idx]
         window_start = start_trade.timestamp
-        window_end = window_start + config.window_size
         
-        # Collect all trades within the window (inclusive of boundary)
-        window_trades: List[TransactionEvent] = []
-        for i in range(start_idx, len(trades)):
-            trade = trades[i]
-            if trade.timestamp > window_end:
-                break
-            window_trades.append(trade)
+        # Collect all trades within the window using sliding window helper
+        window_trades = _collect_window_trades(trades, start_idx, config.window_size)
         
-        if len(window_trades) < config.min_buy_trades + config.min_sell_trades:
-            continue
+        # Validate window against all criteria using validation helper
+        is_valid, buy_trades, sell_trades = _validate_wash_trading_window(window_trades, config)
         
-        # Count BUY and SELL trades
-        buy_trades = [t for t in window_trades if t.side == "BUY"]
-        sell_trades = [t for t in window_trades if t.side == "SELL"]
-        
-        if len(buy_trades) < config.min_buy_trades or len(sell_trades) < config.min_sell_trades:
-            continue
-        
-        # Calculate total volume
-        total_volume = sum(t.quantity for t in window_trades)
-        if total_volume < config.min_total_volume:
-            continue
-        
-        # Calculate alternation percentage
-        alternation_pct = _calculate_alternation_percentage(window_trades)
-        if alternation_pct < config.min_alternation_percentage:
+        if not is_valid:
             continue
         
         # Calculate buy and sell quantities
@@ -253,6 +233,9 @@ def _detect_wash_trading_for_group(
         
         # Calculate optional price change percentage
         price_change_pct = _calculate_price_change_percentage(window_trades)
+        
+        # Calculate alternation percentage (already validated, but needed for sequence)
+        alternation_pct = _calculate_alternation_percentage(window_trades)
         
         # Create suspicious sequence
         sequences.append(
