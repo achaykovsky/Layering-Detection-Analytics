@@ -14,6 +14,7 @@ from uuid import UUID
 import pytest
 
 from layering_detection.models import TransactionEvent
+from tests.fixtures import create_transaction_event
 
 # Import utils module (handles hyphenated directory name)
 project_root = Path(__file__).parent.parent.parent
@@ -60,7 +61,7 @@ class TestHashEvents:
     def test_hash_events_format(self) -> None:
         """Test hash_events returns 64-character hexdigest."""
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -79,7 +80,7 @@ class TestHashEvents:
     def test_hash_events_deterministic(self) -> None:
         """Test that same events always produce same hash."""
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -97,7 +98,7 @@ class TestHashEvents:
 
     def test_hash_events_order_independent(self) -> None:
         """Test that same events in different order produce same hash."""
-        event1 = TransactionEvent(
+        event1 = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -106,7 +107,7 @@ class TestHashEvents:
             quantity=1000,
             event_type="ORDER_PLACED",
         )
-        event2 = TransactionEvent(
+        event2 = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 31, 0),
             account_id="ACC002",
             product_id="GOOG",
@@ -128,7 +129,7 @@ class TestHashEvents:
     def test_hash_events_uniqueness(self) -> None:
         """Test that different events produce different hashes."""
         events1 = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -140,7 +141,7 @@ class TestHashEvents:
         ]
 
         events2 = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC002",  # Different account_id
                 product_id="IBM",
@@ -166,7 +167,7 @@ class TestHashEvents:
     def test_hash_events_single_event(self) -> None:
         """Test hashing single event."""
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -185,7 +186,7 @@ class TestHashEvents:
     def test_hash_events_multiple_events(self) -> None:
         """Test hashing multiple events."""
         events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -194,7 +195,7 @@ class TestHashEvents:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 31, 0),
                 account_id="ACC002",
                 product_id="GOOG",
@@ -203,7 +204,7 @@ class TestHashEvents:
                 quantity=500,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 32, 0),
                 account_id="ACC003",
                 product_id="MSFT",
@@ -221,7 +222,7 @@ class TestHashEvents:
 
     def test_hash_events_all_fields_matter(self) -> None:
         """Test that all event fields contribute to hash."""
-        base_event = TransactionEvent(
+        base_event = create_transaction_event(
             timestamp=datetime(2025, 1, 15, 10, 30, 0),
             account_id="ACC001",
             product_id="IBM",
@@ -236,7 +237,7 @@ class TestHashEvents:
 
         # Test each field change produces different hash
         test_cases = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 31, 0),  # Different timestamp
                 account_id="ACC001",
                 product_id="IBM",
@@ -245,7 +246,7 @@ class TestHashEvents:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC002",  # Different account_id
                 product_id="IBM",
@@ -254,7 +255,7 @@ class TestHashEvents:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="GOOG",  # Different product_id
@@ -263,7 +264,7 @@ class TestHashEvents:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -272,7 +273,7 @@ class TestHashEvents:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -281,7 +282,7 @@ class TestHashEvents:
                 quantity=1000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -290,7 +291,7 @@ class TestHashEvents:
                 quantity=2000,  # Different quantity
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -308,7 +309,7 @@ class TestHashEvents:
     def test_hash_events_decimal_precision(self) -> None:
         """Test that Decimal precision is preserved in hash."""
         events1 = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
@@ -320,7 +321,7 @@ class TestHashEvents:
         ]
 
         events2 = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=datetime(2025, 1, 15, 10, 30, 0),
                 account_id="ACC001",
                 product_id="IBM",
