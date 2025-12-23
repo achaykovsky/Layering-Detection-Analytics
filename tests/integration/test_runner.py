@@ -14,6 +14,7 @@ import pytest
 
 from layering_detection.orchestrator import run_pipeline
 from layering_detection.models import TransactionEvent
+from tests.fixtures import create_transaction_event
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -78,7 +79,7 @@ class TestRunnerPipelineIntegration:
         
         # Layering pattern: ACC001, IBM
         layering_events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time,
                 account_id="ACC001",
                 product_id="IBM",
@@ -87,7 +88,7 @@ class TestRunnerPipelineIntegration:
                 quantity=5000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(seconds=2),
                 account_id="ACC001",
                 product_id="IBM",
@@ -96,7 +97,7 @@ class TestRunnerPipelineIntegration:
                 quantity=5000,
                 event_type="ORDER_PLACED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(seconds=3),
                 account_id="ACC001",
                 product_id="IBM",
@@ -105,7 +106,7 @@ class TestRunnerPipelineIntegration:
                 quantity=5000,
                 event_type="ORDER_CANCELLED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(seconds=4),
                 account_id="ACC001",
                 product_id="IBM",
@@ -118,7 +119,7 @@ class TestRunnerPipelineIntegration:
         
         # Wash trading pattern: ACC002, AAPL
         wash_trading_events = [
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=1),
                 account_id="ACC002",
                 product_id="AAPL",
@@ -127,7 +128,7 @@ class TestRunnerPipelineIntegration:
                 quantity=2000,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=6),
                 account_id="ACC002",
                 product_id="AAPL",
@@ -136,7 +137,7 @@ class TestRunnerPipelineIntegration:
                 quantity=2000,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=11),
                 account_id="ACC002",
                 product_id="AAPL",
@@ -145,7 +146,7 @@ class TestRunnerPipelineIntegration:
                 quantity=2000,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=16),
                 account_id="ACC002",
                 product_id="AAPL",
@@ -154,7 +155,7 @@ class TestRunnerPipelineIntegration:
                 quantity=2000,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=21),
                 account_id="ACC002",
                 product_id="AAPL",
@@ -163,7 +164,7 @@ class TestRunnerPipelineIntegration:
                 quantity=2000,
                 event_type="TRADE_EXECUTED",
             ),
-            TransactionEvent(
+            create_transaction_event(
                 timestamp=base_time + timedelta(minutes=26),
                 account_id="ACC002",
                 product_id="AAPL",
