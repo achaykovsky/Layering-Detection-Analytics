@@ -99,6 +99,147 @@ def _linear_scan_aggregation(
     return spoof_cancel_qty, num_cancelled_orders, opp_trade_qty
 
 
+def _compute_aggregation_metrics(
+    events: List[TransactionEvent],
+    index: EventIndex | None,
+    use_index: bool,
+    side: Side,
+    opposite_side: Side,
+    start_ts: datetime,
+    end_ts: datetime,
+) -> Tuple[int, int, int]:
+    """
+    Compute aggregation metrics over the pattern window.
+    
+    Calculates:
+    - spoof_cancel_qty: Total quantity of cancelled orders for the spoof side
+    - num_cancelled_orders: Count of cancelled orders for the spoof side
+    - opp_trade_qty: Total quantity of opposite-side trades
+    
+    Uses indexed queries for large groups (O(log n)) or linear scan for small groups (O(n)).
+    
+    Args:
+        events: List of transaction events in the group (used for linear scan).
+        index: Event index built by _build_event_index (used when use_index=True).
+            Can be None when use_index=False.
+        use_index: Whether to use indexed queries (True) or linear scan (False).
+        side: Side of the spoof orders (BUY or SELL).
+        opposite_side: Opposite side of the spoof orders.
+        start_ts: Start timestamp of the pattern window (inclusive).
+        end_ts: End timestamp of the pattern window (inclusive).
+    
+    Returns:
+        Tuple of (spoof_cancel_qty: int, num_cancelled_orders: int, opp_trade_qty: int).
+    
+    Example:
+        >>> events = [...]
+        >>> index = _build_event_index(events)
+        >>> metrics = _compute_aggregation_metrics(
+        ...     events, index, use_index=True, side="BUY", opposite_side="SELL",
+        ...     start_ts=datetime(2025, 1, 1, 9, 0, 0),
+        ...     end_ts=datetime(2025, 1, 1, 9, 30, 0)
+        ... )
+        >>> spoof_cancel_qty, num_cancelled_orders, opp_trade_qty = metrics
+        >>> isinstance(spoof_cancel_qty, int)
+        True
+    """
+    # OPTIMIZATION: Use indexed queries for large groups, linear scan for small groups
+    if use_index:
+        # Query cancelled events in window using index (O(log n))
+        cancelled_in_window = _query_events_in_window(
+            index, "ORDER_CANCELLED", side, start_ts, end_ts  # type: ignore[arg-type]
+        )
+        spoof_cancel_qty = sum(e.quantity for e in cancelled_in_window)
+        num_cancelled_orders = len(cancelled_in_window)
+
+        # Query trade events in window using index (O(log n))
+        trades_in_window = _query_events_in_window(
+            index, "TRADE_EXECUTED", opposite_side, start_ts, end_ts  # type: ignore[arg-type]
+        )
+        opp_trade_qty = sum(e.quantity for e in trades_in_window)
+    else:
+        # Linear scan aggregation (faster for small groups)
+        spoof_cancel_qty, num_cancelled_orders, opp_trade_qty = _linear_scan_aggregation(
+            events, side, opposite_side, start_ts, end_ts
+        )
+    
+    return spoof_cancel_qty, num_cancelled_orders, opp_trade_qty
+
+
+def _create_layering_sequence(
+    account_id: str,
+    product_id: str,
+    start_ts: datetime,
+    end_ts: datetime,
+    side: Side,
+    spoof_cancel_qty: int,
+    num_cancelled_orders: int,
+    opp_trade_qty: int,
+    order_timestamps: List[datetime],
+) -> SuspiciousSequence:
+    """
+    Create a SuspiciousSequence for a detected layering pattern.
+    
+    Maps spoof/opposite volumes into total_buy_qty and total_sell_qty based on the side:
+    - BUY side: total_buy_qty = spoof_cancel_qty, total_sell_qty = opp_trade_qty
+    - SELL side: total_sell_qty = spoof_cancel_qty, total_buy_qty = opp_trade_qty
+    
+    Args:
+        account_id: Account identifier.
+        product_id: Product identifier.
+        start_ts: Start timestamp of the pattern window.
+        end_ts: End timestamp of the pattern window.
+        side: Side of the spoof orders (BUY or SELL).
+        spoof_cancel_qty: Total quantity of cancelled orders for the spoof side.
+        num_cancelled_orders: Count of cancelled orders for the spoof side.
+        opp_trade_qty: Total quantity of opposite-side trades.
+        order_timestamps: List of timestamps for the placed orders in the pattern.
+    
+    Returns:
+        SuspiciousSequence instance with detection_type="LAYERING".
+    
+    Example:
+        >>> from datetime import datetime, timezone
+        >>> sequence = _create_layering_sequence(
+        ...     account_id="ACC001",
+        ...     product_id="IBM",
+        ...     start_ts=datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc),
+        ...     end_ts=datetime(2025, 1, 1, 9, 30, 0, tzinfo=timezone.utc),
+        ...     side="BUY",
+        ...     spoof_cancel_qty=5000,
+        ...     num_cancelled_orders=3,
+        ...     opp_trade_qty=3000,
+        ...     order_timestamps=[datetime(2025, 1, 1, 9, 0, 0, tzinfo=timezone.utc)]
+        ... )
+        >>> sequence.detection_type == "LAYERING"
+        True
+        >>> sequence.total_buy_qty == 5000
+        True
+        >>> sequence.total_sell_qty == 3000
+        True
+    """
+    # Map spoof/opposite volumes into total_buy_qty and total_sell_qty.
+    if side == "BUY":
+        total_buy_qty = spoof_cancel_qty
+        total_sell_qty = opp_trade_qty
+    else:  # side == "SELL"
+        total_sell_qty = spoof_cancel_qty
+        total_buy_qty = opp_trade_qty
+    
+    return SuspiciousSequence(
+        account_id=account_id,
+        product_id=product_id,
+        start_timestamp=start_ts,
+        end_timestamp=end_ts,
+        total_buy_qty=total_buy_qty,
+        total_sell_qty=total_sell_qty,
+        detection_type="LAYERING",
+        side=side,
+        num_cancelled_orders=num_cancelled_orders,
+        order_timestamps=order_timestamps,
+    )
+
+
 def _build_event_index(events: List[TransactionEvent]) -> EventIndex:
     """
     Build index by (event_type, side) with sorted timestamps.
@@ -318,48 +459,24 @@ def _detect_sequences_for_group(
         end_ts = opposite_trade.timestamp
         order_timestamps: list[datetime] = [e.timestamp for e in window_orders]
 
-        # OPTIMIZATION: Use indexed queries for large groups, linear scan for small groups
-        if use_index:
-            # Query cancelled events in window using index (O(log n))
-            cancelled_in_window = _query_events_in_window(
-                index, "ORDER_CANCELLED", side, start_ts, end_ts
-            )
-            spoof_cancel_qty = sum(e.quantity for e in cancelled_in_window)
-            num_cancelled_orders = len(cancelled_in_window)
-
-            # Query trade events in window using index (O(log n))
-            trades_in_window = _query_events_in_window(
-                index, "TRADE_EXECUTED", opposite_side, start_ts, end_ts
-            )
-            opp_trade_qty = sum(e.quantity for e in trades_in_window)
-        else:
-            # Linear scan aggregation (faster for small groups)
-            spoof_cancel_qty, num_cancelled_orders, opp_trade_qty = _linear_scan_aggregation(
-                events, side, opposite_side, start_ts, end_ts
-            )
-
-        # Map spoof/opposite volumes into total_buy_qty and total_sell_qty.
-        if side == "BUY":
-            total_buy_qty = spoof_cancel_qty
-            total_sell_qty = opp_trade_qty
-        else:  # side == "SELL"
-            total_sell_qty = spoof_cancel_qty
-            total_buy_qty = opp_trade_qty
-
-        sequences.append(
-            SuspiciousSequence(
-                account_id=account_id,
-                product_id=product_id,
-                start_timestamp=start_ts,
-                end_timestamp=end_ts,
-                total_buy_qty=total_buy_qty,
-                total_sell_qty=total_sell_qty,
-                detection_type="LAYERING",
-                side=side,
-                num_cancelled_orders=num_cancelled_orders,
-                order_timestamps=order_timestamps,
-            )
+        # Compute aggregation metrics using helper function
+        spoof_cancel_qty, num_cancelled_orders, opp_trade_qty = _compute_aggregation_metrics(
+            events, index, use_index, side, opposite_side, start_ts, end_ts
         )
+
+        # Create suspicious sequence using helper function
+        sequence = _create_layering_sequence(
+            account_id=account_id,
+            product_id=product_id,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            side=side,
+            spoof_cancel_qty=spoof_cancel_qty,
+            num_cancelled_orders=num_cancelled_orders,
+            opp_trade_qty=opp_trade_qty,
+            order_timestamps=order_timestamps,
+        )
+        sequences.append(sequence)
 
         # Move index forward so spoof orders used in this sequence are not reused.
         idx = last_order_idx + 1
