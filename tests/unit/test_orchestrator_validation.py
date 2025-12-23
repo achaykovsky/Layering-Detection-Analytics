@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 
 from services.shared.api_models import AlgorithmResponse
+from tests.fixtures import create_algorithm_response
 
 # Import validation module (handles hyphenated directory name)
 project_root = Path(__file__).parent.parent.parent
@@ -30,12 +30,10 @@ class TestValidateAllCompleted:
             "layering": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
-                    request_id=str(uuid4()),
+                "result": create_algorithm_response(
                     service_name="layering",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
@@ -59,12 +57,10 @@ class TestValidateAllCompleted:
             "layering": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
-                    request_id=str(uuid4()),
+                "result": create_algorithm_response(
                     service_name="layering",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
@@ -94,12 +90,10 @@ class TestValidateAllCompleted:
             "wash_trading": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
-                    request_id=str(uuid4()),
+                "result": create_algorithm_response(
                     service_name="wash_trading",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
@@ -148,12 +142,10 @@ class TestValidateAllCompleted:
             "layering": {
                 "status": "success",
                 # final_status key missing
-                "result": AlgorithmResponse(
-                    request_id=str(uuid4()),
+                "result": create_algorithm_response(
                     service_name="layering",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "retry_count": 0,
@@ -173,12 +165,10 @@ class TestValidateAllCompleted:
             "layering": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
-                    request_id=str(uuid4()),
+                "result": create_algorithm_response(
                     service_name="layering",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
@@ -210,17 +200,18 @@ class TestValidateAllCompleted:
 
     def test_validation_with_request_id_logging(self) -> None:
         """Test validation with request_id for logging."""
+        from uuid import uuid4
+
         request_id = str(uuid4())
         service_status = {
             "layering": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
+                "result": create_algorithm_response(
                     request_id=request_id,
                     service_name="layering",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
@@ -229,12 +220,11 @@ class TestValidateAllCompleted:
             "wash_trading": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
+                "result": create_algorithm_response(
                     request_id=request_id,
                     service_name="wash_trading",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
@@ -272,12 +262,10 @@ class TestValidateAllCompleted:
             "layering": {
                 "status": "success",
                 "final_status": True,
-                "result": AlgorithmResponse(
-                    request_id=str(uuid4()),
+                "result": create_algorithm_response(
                     service_name="layering",
                     status="success",
                     results=[],
-                    error=None,
                     final_status=True,
                 ),
                 "error": None,
