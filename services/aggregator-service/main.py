@@ -16,11 +16,15 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 
 from services.shared.api_models import AggregateRequest, AggregateResponse
-from services.shared.config import get_port
+from services.shared.config import get_port, get_rate_limit_per_minute
+from services.shared.error_sanitization import log_error_with_context, sanitize_error_message
 from services.shared.logging import get_logger, setup_logging
+from services.shared.rate_limiting import RateLimitMiddleware
+from services.shared.request_limits import RequestSizeLimitMiddleware
 
 # Import service-specific config
 # Note: aggregator-service directory name has hyphen, so we import via path manipulation
@@ -32,6 +36,7 @@ spec.loader.exec_module(aggregator_config)
 get_output_dir = aggregator_config.get_output_dir
 get_logs_dir = aggregator_config.get_logs_dir
 get_validation_strict = aggregator_config.get_validation_strict
+get_api_key = aggregator_config.get_api_key
 
 # Import aggregator service modules
 validation_path = Path(__file__).parent / "validation.py"
@@ -63,6 +68,55 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Add request size limit middleware (10MB max)
+app.add_middleware(RequestSizeLimitMiddleware, max_request_size=10 * 1024 * 1024)
+
+# Add rate limiting middleware (100 requests/minute per IP, configurable)
+rate_limit = get_rate_limit_per_minute(default=100)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=rate_limit, excluded_paths={"/health"})
+
+# API Key authentication
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str:
+    """
+    Verify API key from request header.
+
+    Args:
+        api_key: API key from X-API-Key header
+
+    Returns:
+        API key if valid
+
+    Raises:
+        HTTPException: If API key is missing or invalid (HTTP 401)
+    """
+    expected_api_key = get_api_key()
+
+    # If no API key configured, skip authentication (development only)
+    if expected_api_key is None:
+        logger.warning("API_KEY not configured - authentication disabled (development mode)")
+        return ""
+
+    # Check if API key is provided
+    if api_key is None:
+        logger.warning("API key missing from request")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Provide X-API-Key header.",
+        )
+
+    # Verify API key matches
+    if api_key != expected_api_key:
+        logger.warning(f"Invalid API key provided (first 8 chars: {api_key[:8]}...)")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key.",
+        )
+
+    return api_key
+
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
@@ -88,13 +142,15 @@ async def root() -> dict[str, str]:
         "service": "aggregator-service",
         "version": "1.0.0",
         "status": "running",
-        "output_dir": get_output_dir(),
-        "validation_strict": get_validation_strict(),
     }
 
 
 @app.post("/aggregate", response_model=AggregateResponse)
-async def aggregate(request: AggregateRequest, http_request: Request) -> AggregateResponse:
+async def aggregate(
+    request: AggregateRequest,
+    http_request: Request,
+    api_key: str = Depends(verify_api_key),
+) -> AggregateResponse:
     """
     Aggregate results from algorithm services, validate completion, merge sequences, and write output files.
 
@@ -206,13 +262,16 @@ async def aggregate(request: AggregateRequest, http_request: Request) -> Aggrega
             extra={"request_id": request_id},
         )
     except (IOError, OSError, ValueError) as e:
-        # File write failed - return error
-        error_message = f"Failed to write output files: {str(e)}"
-        service_logger.error(
-            error_message,
-            extra={"request_id": request_id},
-            exc_info=True,
+        # File write failed - log full details, return sanitized message
+        log_error_with_context(
+            service_logger,
+            "Failed to write output files",
+            e,
+            request_id=request_id,
+            output_dir=output_dir,
+            logs_dir=logs_dir,
         )
+        error_message = sanitize_error_message(e, "Failed to write output files")
         return AggregateResponse(
             status="validation_failed",
             merged_count=merged_count,  # Include merged count even if write failed
@@ -239,5 +298,11 @@ if __name__ == "__main__":
 
     port = get_port(default=8003)
     logger.info(f"Starting Aggregator Service on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        limit_concurrency=100,
+        limit_max_requests=1000,
+    )
 
