@@ -15,6 +15,7 @@ from layering_detection.utils.logging_utils import write_detection_logs
 from layering_detection.utils.transaction_io import write_suspicious_accounts
 
 from services.shared.converters import dto_to_suspicious_sequence
+from services.shared.error_sanitization import log_error_with_context, sanitize_error_message
 from services.shared.logging import get_logger
 
 if TYPE_CHECKING:
@@ -124,17 +125,17 @@ def write_output_files(
             )
 
     except (IOError, OSError) as e:
-        # Log error with context
-        error_msg = f"Failed to write output files: {str(e)}"
-        if request_id:
-            logger.error(
-                error_msg,
-                extra={"request_id": request_id},
-                exc_info=True,
-            )
-        else:
-            logger.error(error_msg, exc_info=True)
-        raise
+        # Log error with full context (including paths)
+        log_error_with_context(
+            logger,
+            "Failed to write output files",
+            e,
+            request_id=request_id,
+            output_dir=str(output_dir_path),
+            logs_dir=str(logs_dir_path),
+        )
+        # Re-raise with sanitized message
+        raise IOError(sanitize_error_message(e, "Failed to write output files")) from e
 
 
 def write_output_files_from_dtos(
@@ -182,16 +183,15 @@ def write_output_files_from_dtos(
             domain_seq = dto_to_suspicious_sequence(dto)
             domain_sequences.append(domain_seq)
         except Exception as e:
-            error_msg = f"Failed to convert DTO to domain model: {str(e)}"
-            if request_id:
-                logger.error(
-                    error_msg,
-                    extra={"request_id": request_id},
-                    exc_info=True,
-                )
-            else:
-                logger.error(error_msg, exc_info=True)
-            raise ValueError(error_msg) from e
+            # Log error with full context
+            log_error_with_context(
+                logger,
+                "Failed to convert DTO to domain model",
+                e,
+                request_id=request_id,
+            )
+            # Raise with sanitized message
+            raise ValueError(sanitize_error_message(e, "Failed to process data")) from e
 
     # Write files using domain models
     write_output_files(domain_sequences, output_dir, logs_dir, request_id)
