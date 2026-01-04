@@ -94,3 +94,24 @@ def get_allow_partial_results(default: bool = False) -> bool:
     value = os.getenv("ALLOW_PARTIAL_RESULTS", str(default)).lower()
     return value in ("true", "1", "yes")
 
+
+def get_api_key() -> str | None:
+    """
+    Get API key from environment variable.
+
+    API key used for authenticating requests to the aggregator service.
+    If not set, authentication is disabled (for development only).
+
+    Returns:
+        API key as string, or None if not set
+
+    Examples:
+        >>> import os
+        >>> os.environ["API_KEY"] = "test-key-123"
+        >>> get_api_key()
+        'test-key-123'
+        >>> del os.environ["API_KEY"]
+        >>> get_api_key() is None
+        True
+    """
+    return os.getenv("API_KEY")
