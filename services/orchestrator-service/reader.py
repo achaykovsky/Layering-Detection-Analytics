@@ -11,6 +11,7 @@ from pathlib import Path
 from layering_detection.models import TransactionEvent
 from layering_detection.utils.transaction_io import read_transactions
 
+from services.shared.error_sanitization import log_error_with_context, sanitize_error_message
 from services.shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -58,21 +59,29 @@ def read_input_csv(
 
     # Validate file exists
     if not csv_path.exists():
-        error_msg = f"Input CSV file not found: {csv_path}"
-        if request_id:
-            logger.error(error_msg, extra={"request_id": request_id})
-        else:
-            logger.error(error_msg)
-        raise FileNotFoundError(error_msg)
+        error = FileNotFoundError(f"Input CSV file not found: {csv_path}")
+        log_error_with_context(
+            logger,
+            "Input CSV file not found",
+            error,
+            request_id=request_id,
+            path=str(csv_path),
+        )
+        # Raise with sanitized message
+        raise FileNotFoundError(sanitize_error_message(error, "Input file not found"))
 
     # Validate file is readable
     if not csv_path.is_file():
-        error_msg = f"Path is not a file: {csv_path}"
-        if request_id:
-            logger.error(error_msg, extra={"request_id": request_id})
-        else:
-            logger.error(error_msg)
-        raise ValueError(error_msg)
+        error = ValueError(f"Path is not a file: {csv_path}")
+        log_error_with_context(
+            logger,
+            "Path is not a file",
+            error,
+            request_id=request_id,
+            path=str(csv_path),
+        )
+        # Raise with sanitized message
+        raise ValueError(sanitize_error_message(error, "Invalid file path"))
 
     try:
         # Use existing CSV reading utility
@@ -97,26 +106,35 @@ def read_input_csv(
         raise
     except (IOError, OSError) as e:
         # File read errors
-        error_msg = f"Failed to read CSV file {csv_path}: {str(e)}"
-        if request_id:
-            logger.error(error_msg, extra={"request_id": request_id}, exc_info=True)
-        else:
-            logger.error(error_msg, exc_info=True)
-        raise IOError(error_msg) from e
+        log_error_with_context(
+            logger,
+            "Failed to read CSV file",
+            e,
+            request_id=request_id,
+            path=str(csv_path),
+        )
+        # Raise with sanitized message
+        raise IOError(sanitize_error_message(e, "Failed to read input file")) from e
     except ValueError as e:
         # CSV format or data validation errors
-        error_msg = f"Invalid CSV format or data in {csv_path}: {str(e)}"
-        if request_id:
-            logger.error(error_msg, extra={"request_id": request_id}, exc_info=True)
-        else:
-            logger.error(error_msg, exc_info=True)
-        raise ValueError(error_msg) from e
+        log_error_with_context(
+            logger,
+            "Invalid CSV format or data",
+            e,
+            request_id=request_id,
+            path=str(csv_path),
+        )
+        # Raise with sanitized message
+        raise ValueError(sanitize_error_message(e, "Invalid CSV format or data")) from e
     except Exception as e:
         # Unexpected errors
-        error_msg = f"Unexpected error reading CSV file {csv_path}: {str(e)}"
-        if request_id:
-            logger.error(error_msg, extra={"request_id": request_id}, exc_info=True)
-        else:
-            logger.error(error_msg, exc_info=True)
+        log_error_with_context(
+            logger,
+            "Unexpected error reading CSV file",
+            e,
+            request_id=request_id,
+            path=str(csv_path),
+        )
+        # Re-raise original exception (will be caught and sanitized at API level)
         raise
 
