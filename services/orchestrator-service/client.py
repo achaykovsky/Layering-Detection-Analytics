@@ -33,6 +33,9 @@ spec.loader.exec_module(orchestrator_config)
 get_layering_service_url = orchestrator_config.get_layering_service_url
 get_wash_trading_service_url = orchestrator_config.get_wash_trading_service_url
 get_aggregator_service_url = orchestrator_config.get_aggregator_service_url
+get_layering_api_key = orchestrator_config.get_layering_api_key
+get_wash_trading_api_key = orchestrator_config.get_wash_trading_api_key
+get_aggregator_api_key = orchestrator_config.get_aggregator_api_key
 
 logger = get_logger(__name__)
 
@@ -115,13 +118,25 @@ async def call_algorithm_service(
         extra={"request_id": request_id},
     )
 
+    # Get API key for this service
+    api_key = None
+    if service_name == "layering":
+        api_key = get_layering_api_key()
+    elif service_name == "wash_trading":
+        api_key = get_wash_trading_api_key()
+
+    # Prepare headers
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+
     try:
         # Make async HTTP POST request
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 detect_url,
                 json=request.model_dump(),
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
 
             # Raise exception for HTTP error status codes
@@ -250,13 +265,21 @@ async def call_aggregator_service(
         extra={"request_id": request_id},
     )
 
+    # Get API key for aggregator service
+    api_key = get_aggregator_api_key()
+
+    # Prepare headers
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+
     try:
         # Make async HTTP POST request
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 aggregate_url,
                 json=request.model_dump(),
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
 
             # Raise exception for HTTP error status codes
