@@ -1,5 +1,7 @@
 """
-Unit tests for Orchestrator Service completion validation logic.
+Unit tests for orchestrator service input validation.
+
+Tests input_file validation to prevent path injection attacks.
 """
 
 from __future__ import annotations
@@ -8,271 +10,271 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
-from services.shared.api_models import AlgorithmResponse
-from tests.fixtures import create_algorithm_response
-
-# Import validation module (handles hyphenated directory name)
+# Import orchestrator main module
 project_root = Path(__file__).parent.parent.parent
-validation_path = project_root / "services" / "orchestrator-service" / "validation.py"
-spec = importlib.util.spec_from_file_location("orchestrator_validation", validation_path)
-orchestrator_validation = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(orchestrator_validation)
-validate_all_completed = orchestrator_validation.validate_all_completed
+main_path = project_root / "services" / "orchestrator-service" / "main.py"
+spec = importlib.util.spec_from_file_location("orchestrator_main", main_path)
+orchestrator_main = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(orchestrator_main)
+OrchestrateRequest = orchestrator_main.OrchestrateRequest
 
 
-class TestValidateAllCompleted:
-    """Tests for validate_all_completed function."""
+class TestInputFileValidation:
+    """Tests for OrchestrateRequest.input_file validation."""
 
-    def test_validation_success_all_services_complete(self) -> None:
-        """Test validation passes when all expected services are complete."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    service_name="layering",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-            "wash_trading": {
-                "status": "exhausted",
-                "final_status": True,
-                "result": None,
-                "error": "Service error",
-                "retry_count": 3,
-            },
-        }
+    def test_valid_filename_accepted(self) -> None:
+        """Test that valid filenames are accepted."""
+        # Arrange & Act
+        request = OrchestrateRequest(input_file="transactions.csv")
 
-        # Should not raise exception
-        validate_all_completed(service_status, ["layering", "wash_trading"])
+        # Assert
+        assert request.input_file == "transactions.csv"
 
-    def test_validation_fails_missing_service(self) -> None:
-        """Test validation fails when expected service is missing."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    service_name="layering",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-            # wash_trading is missing
-        }
+    def test_valid_filename_with_hyphens(self) -> None:
+        """Test that filenames with hyphens are accepted."""
+        # Arrange & Act
+        request = OrchestrateRequest(input_file="transactions-2025-01-15.csv")
 
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_all_completed(service_status, ["layering", "wash_trading"])
+        # Assert
+        assert request.input_file == "transactions-2025-01-15.csv"
 
-        error_message = str(exc_info.value)
-        assert "Services did not complete" in error_message
-        assert "wash_trading" in error_message
-        assert "final_status=True" in error_message
+    def test_valid_filename_with_underscores(self) -> None:
+        """Test that filenames with underscores are accepted."""
+        # Arrange & Act
+        request = OrchestrateRequest(input_file="transactions_2025_01_15.csv")
 
-    def test_validation_fails_incomplete_service(self) -> None:
-        """Test validation fails when service has final_status=False."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": False,  # Incomplete
-                "result": None,
-                "error": None,
-                "retry_count": 0,
-            },
-            "wash_trading": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    service_name="wash_trading",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-        }
+        # Assert
+        assert request.input_file == "transactions_2025_01_15.csv"
 
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_all_completed(service_status, ["layering", "wash_trading"])
+    def test_valid_filename_with_dots(self) -> None:
+        """Test that filenames with dots (for extensions) are accepted."""
+        # Arrange & Act
+        request = OrchestrateRequest(input_file="data.file.csv")
 
-        error_message = str(exc_info.value)
-        assert "Services did not complete" in error_message
-        assert "layering" in error_message
-        assert "final_status=True" in error_message
+        # Assert
+        assert request.input_file == "data.file.csv"
 
-    def test_validation_fails_multiple_incomplete_services(self) -> None:
-        """Test validation fails when multiple services are incomplete."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": False,  # Incomplete
-                "result": None,
-                "error": None,
-                "retry_count": 0,
-            },
-            "wash_trading": {
-                "status": "exhausted",
-                "final_status": False,  # Incomplete
-                "result": None,
-                "error": "Service error",
-                "retry_count": 3,
-            },
-        }
+    def test_valid_filename_alphanumeric_only(self) -> None:
+        """Test that alphanumeric-only filenames are accepted."""
+        # Arrange & Act
+        request = OrchestrateRequest(input_file="data123")
 
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_all_completed(service_status, ["layering", "wash_trading"])
+        # Assert
+        assert request.input_file == "data123"
 
-        error_message = str(exc_info.value)
-        assert "Services did not complete" in error_message
-        assert "layering" in error_message
-        assert "wash_trading" in error_message
+    def test_path_separator_forward_slash_rejected(self) -> None:
+        """Test that forward slash path separator is rejected."""
+        # Arrange & Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="path/to/file.csv")
 
-    def test_validation_fails_missing_final_status_key(self) -> None:
-        """Test validation fails when final_status key is missing."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                # final_status key missing
-                "result": create_algorithm_response(
-                    service_name="layering",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "retry_count": 0,
-            },
-        }
+        errors = exc_info.value.errors()
+        assert any("path separator" in str(error).lower() for error in errors)
 
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_all_completed(service_status, ["layering"])
+    def test_path_separator_backslash_rejected(self) -> None:
+        """Test that backslash path separator is rejected."""
+        # Arrange & Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="path\\to\\file.csv")
 
-        error_message = str(exc_info.value)
-        assert "Services did not complete" in error_message
-        assert "layering" in error_message
+        errors = exc_info.value.errors()
+        assert any("path separator" in str(error).lower() for error in errors)
 
-    def test_validation_success_with_exhausted_service(self) -> None:
-        """Test validation passes when service exhausted retries but has final_status=True."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    service_name="layering",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-            "wash_trading": {
-                "status": "exhausted",
-                "final_status": True,  # Retries exhausted, but final_status=True
-                "result": None,
-                "error": "All retries exhausted",
-                "retry_count": 3,
-            },
-        }
+    def test_invalid_characters_rejected(self) -> None:
+        """Test that invalid characters are rejected."""
+        # Test various invalid characters
+        invalid_filenames = [
+            "file with spaces.csv",
+            "file@name.csv",
+            "file#name.csv",
+            "file$name.csv",
+            "file%name.csv",
+            "file&name.csv",
+            "file*name.csv",
+            "file+name.csv",
+            "file=name.csv",
+            "file[name].csv",
+            "file{name}.csv",
+            "file|name.csv",
+            "file:name.csv",
+            "file;name.csv",
+            "file'name.csv",
+            'file"name.csv',
+            "file<name>.csv",
+            "file>name.csv",
+            "file?name.csv",
+            "file!name.csv",
+            "file~name.csv",
+            "file`name.csv",
+        ]
 
-        # Should not raise exception - exhausted services with final_status=True are considered complete
-        validate_all_completed(service_status, ["layering", "wash_trading"])
+        for invalid_filename in invalid_filenames:
+            with pytest.raises(ValidationError) as exc_info:
+                OrchestrateRequest(input_file=invalid_filename)
 
-    def test_validation_empty_service_status(self) -> None:
-        """Test validation fails when service_status is empty."""
-        service_status = {}
+            errors = exc_info.value.errors()
+            assert any(
+                "alphanumeric" in str(error).lower() or "invalid" in str(error).lower()
+                for error in errors
+            ), f"Expected validation error for: {invalid_filename}"
 
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_all_completed(service_status, ["layering", "wash_trading"])
+    def test_max_length_enforced(self) -> None:
+        """Test that maximum filename length (255 chars) is enforced."""
+        # Arrange - Create filename exactly at max length
+        max_filename = "a" * 255
 
-        error_message = str(exc_info.value)
-        assert "Services did not complete" in error_message
-        assert "layering" in error_message
-        assert "wash_trading" in error_message
+        # Act
+        request = OrchestrateRequest(input_file=max_filename)
 
-    def test_validation_with_request_id_logging(self) -> None:
-        """Test validation with request_id for logging."""
-        from uuid import uuid4
+        # Assert
+        assert len(request.input_file) == 255
 
-        request_id = str(uuid4())
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    request_id=request_id,
-                    service_name="layering",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-            "wash_trading": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    request_id=request_id,
-                    service_name="wash_trading",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-        }
+    def test_exceeds_max_length_rejected(self) -> None:
+        """Test that filenames exceeding max length are rejected."""
+        # Arrange - Create filename exceeding max length
+        too_long_filename = "a" * 256
 
-        # Should not raise exception
-        validate_all_completed(service_status, ["layering", "wash_trading"], request_id=request_id)
+        # Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file=too_long_filename)
 
-    def test_validation_error_message_format(self) -> None:
-        """Test error message format includes all necessary information."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": False,  # Incomplete
-                "result": None,
-                "error": None,
-                "retry_count": 0,
-            },
-        }
+        errors = exc_info.value.errors()
+        # Pydantic will raise error for max_length violation
+        assert any("max_length" in str(error).lower() for error in errors)
 
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_all_completed(service_status, ["layering", "wash_trading"])
+    def test_empty_filename_rejected(self) -> None:
+        """Test that empty filename is rejected."""
+        # Arrange & Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="")
 
-        error_message = str(exc_info.value)
-        # Check error message contains key information
-        assert "Services did not complete" in error_message
-        assert "layering" in error_message or "wash_trading" in error_message
-        assert "final_status=True" in error_message
+        errors = exc_info.value.errors()
+        # Check that validation error occurred (could be from validator or Pydantic required field)
+        assert len(errors) > 0
+        # Verify the error is related to the input_file field
+        assert any("input_file" in str(error) for error in errors)
 
-    def test_validation_single_service(self) -> None:
-        """Test validation with single expected service."""
-        service_status = {
-            "layering": {
-                "status": "success",
-                "final_status": True,
-                "result": create_algorithm_response(
-                    service_name="layering",
-                    status="success",
-                    results=[],
-                    final_status=True,
-                ),
-                "error": None,
-                "retry_count": 0,
-            },
-        }
+    def test_whitespace_only_filename_rejected(self) -> None:
+        """Test that whitespace-only filename is rejected."""
+        # Arrange & Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="   ")
 
-        # Should not raise exception
-        validate_all_completed(service_status, ["layering"])
+        errors = exc_info.value.errors()
+        # Check that validation error occurred
+        assert len(errors) > 0
+        # Verify the error is related to the input_file field
+        # The validator should catch whitespace-only strings
+        assert any("input_file" in str(error) for error in errors)
 
+    def test_filename_starting_with_dot_rejected(self) -> None:
+        """Test that filename starting with dot is rejected."""
+        # Arrange & Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file=".hidden_file.csv")
+
+        errors = exc_info.value.errors()
+        assert any("start" in str(error).lower() and "dot" in str(error).lower() for error in errors)
+
+    def test_filename_ending_with_dot_rejected(self) -> None:
+        """Test that filename ending with dot is rejected."""
+        # Arrange & Act & Assert
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="file.csv.")
+
+        errors = exc_info.value.errors()
+        assert any("end" in str(error).lower() and "dot" in str(error).lower() for error in errors)
+
+    def test_absolute_path_rejected(self) -> None:
+        """Test that absolute paths are rejected."""
+        # Test Unix-style absolute path
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="/etc/passwd")
+
+        errors = exc_info.value.errors()
+        assert any("path separator" in str(error).lower() for error in errors)
+
+        # Test Windows-style absolute path
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="C:\\Windows\\System32\\file.csv")
+
+        errors = exc_info.value.errors()
+        assert any("path separator" in str(error).lower() for error in errors)
+
+    def test_relative_path_rejected(self) -> None:
+        """Test that relative paths are rejected."""
+        # Test Unix-style relative path
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="../etc/passwd")
+
+        errors = exc_info.value.errors()
+        assert any("path separator" in str(error).lower() for error in errors)
+
+        # Test Windows-style relative path
+        with pytest.raises(ValidationError) as exc_info:
+            OrchestrateRequest(input_file="..\\..\\etc\\passwd")
+
+        errors = exc_info.value.errors()
+        assert any("path separator" in str(error).lower() for error in errors)
+
+
+class TestInputFileValidationAtAPILevel:
+    """Tests for input_file validation at API endpoint level."""
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        """Create FastAPI test client."""
+        app = orchestrator_main.app
+        return TestClient(app)
+
+    @pytest.fixture
+    def auth_headers(self) -> dict[str, str]:
+        """Create authentication headers."""
+        return {"X-API-Key": "test-key"}
+
+    def test_valid_filename_works_at_api_level(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        """Test that valid filenames work at API endpoint level."""
+        # Arrange
+        request_body = {"input_file": "transactions.csv"}
+
+        # Act
+        response = client.post("/orchestrate", json=request_body, headers=auth_headers)
+
+        # Assert - Should not return 422 (validation error)
+        # May return other status codes (e.g., 404 if file doesn't exist, 500 for other errors)
+        assert response.status_code != 422
+
+    def test_invalid_filename_returns_422(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        """Test that invalid filenames return HTTP 422 at API level."""
+        # Arrange - Test with path separator
+        request_body = {"input_file": "path/to/file.csv"}
+
+        # Act
+        response = client.post("/orchestrate", json=request_body, headers=auth_headers)
+
+        # Assert - Should return 422 (validation error)
+        assert response.status_code == 422
+        error_detail = str(response.json()).lower()
+        assert "path separator" in error_detail or "validation" in error_detail
+
+    def test_invalid_characters_return_422(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        """Test that filenames with invalid characters return HTTP 422."""
+        # Arrange - Test with invalid characters
+        request_body = {"input_file": "file with spaces.csv"}
+
+        # Act
+        response = client.post("/orchestrate", json=request_body, headers=auth_headers)
+
+        # Assert - Should return 422 (validation error)
+        assert response.status_code == 422
+        error_detail = str(response.json()).lower()
+        assert "alphanumeric" in error_detail or "invalid" in error_detail
