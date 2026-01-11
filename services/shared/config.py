@@ -246,3 +246,80 @@ def get_logs_dir(default: str = "/app/logs") -> str:
     """
     return os.getenv("LOGS_DIR", default)
 
+
+def get_cache_size(default: int = 1000) -> int:
+    """
+    Get cache size limit from CACHE_SIZE environment variable.
+
+    Args:
+        default: Default cache size if CACHE_SIZE not set (default: 1000)
+
+    Returns:
+        Cache size limit as integer
+
+    Raises:
+        ValueError: If CACHE_SIZE value is invalid (not a positive integer)
+
+    Example:
+        >>> import os
+        >>> os.environ["CACHE_SIZE"] = "500"
+        >>> get_cache_size()
+        500
+
+        >>> get_cache_size()
+        1000  # Default if CACHE_SIZE not set
+    """
+    cache_size_str = os.getenv("CACHE_SIZE")
+    if cache_size_str is None:
+        return default
+
+    try:
+        cache_size = int(cache_size_str)
+        if cache_size <= 0:
+            raise ValueError(f"Invalid CACHE_SIZE: {cache_size} (must be positive)")
+        return cache_size
+    except ValueError as e:
+        if "invalid literal" in str(e).lower():
+            raise ValueError(
+                f"Invalid CACHE_SIZE environment variable: {cache_size_str} (must be integer)"
+            ) from e
+        raise
+
+
+def get_rate_limit_per_minute(default: int = 100) -> int:
+    """
+    Get rate limit (requests per minute) from RATE_LIMIT_PER_MINUTE environment variable.
+
+    Args:
+        default: Default rate limit if RATE_LIMIT_PER_MINUTE not set (default: 100)
+
+    Returns:
+        Rate limit (requests per minute) as integer
+
+    Raises:
+        ValueError: If RATE_LIMIT_PER_MINUTE value is invalid (not a positive integer)
+
+    Example:
+        >>> import os
+        >>> os.environ["RATE_LIMIT_PER_MINUTE"] = "200"
+        >>> get_rate_limit_per_minute()
+        200
+
+        >>> get_rate_limit_per_minute()
+        100  # Default if RATE_LIMIT_PER_MINUTE not set
+    """
+    rate_limit_str = os.getenv("RATE_LIMIT_PER_MINUTE")
+    if rate_limit_str is None:
+        return default
+
+    try:
+        rate_limit = int(rate_limit_str)
+        if rate_limit <= 0:
+            raise ValueError(f"Invalid RATE_LIMIT_PER_MINUTE: {rate_limit} (must be positive)")
+        return rate_limit
+    except ValueError as e:
+        if "invalid literal" in str(e).lower():
+            raise ValueError(
+                f"Invalid RATE_LIMIT_PER_MINUTE environment variable: {rate_limit_str} (must be integer)"
+            ) from e
+        raise
