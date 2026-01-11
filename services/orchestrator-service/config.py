@@ -117,3 +117,81 @@ def get_timeout_seconds(default: int = 30) -> int:
     """
     return get_shared_timeout_seconds(default=default)
 
+
+def get_api_key() -> str | None:
+    """
+    Get API key from environment variable.
+
+    API key used for authenticating requests to the orchestrator service.
+    If not set, authentication is disabled (for development only).
+
+    Returns:
+        API key as string, or None if not set
+
+    Examples:
+        >>> import os
+        >>> os.environ["API_KEY"] = "test-key-123"
+        >>> get_api_key()
+        'test-key-123'
+        >>> del os.environ["API_KEY"]
+        >>> get_api_key() is None
+        True
+    """
+    return os.getenv("API_KEY")
+
+
+def get_layering_api_key() -> str | None:
+    """
+    Get API key for layering service from environment variable.
+
+    API key used for authenticating requests to the layering service.
+    Falls back to LAYERING_API_KEY, then API_KEY if not set.
+
+    Returns:
+        API key as string, or None if not set
+
+    Examples:
+        >>> import os
+        >>> os.environ["LAYERING_API_KEY"] = "layering-key-123"
+        >>> get_layering_api_key()
+        'layering-key-123'
+    """
+    return os.getenv("LAYERING_API_KEY") or os.getenv("API_KEY")
+
+
+def get_wash_trading_api_key() -> str | None:
+    """
+    Get API key for wash trading service from environment variable.
+
+    API key used for authenticating requests to the wash trading service.
+    Falls back to WASH_TRADING_API_KEY, then API_KEY if not set.
+
+    Returns:
+        API key as string, or None if not set
+
+    Examples:
+        >>> import os
+        >>> os.environ["WASH_TRADING_API_KEY"] = "wash-key-123"
+        >>> get_wash_trading_api_key()
+        'wash-key-123'
+    """
+    return os.getenv("WASH_TRADING_API_KEY") or os.getenv("API_KEY")
+
+
+def get_aggregator_api_key() -> str | None:
+    """
+    Get API key for aggregator service from environment variable.
+
+    API key used for authenticating requests to the aggregator service.
+    Falls back to AGGREGATOR_API_KEY, then API_KEY if not set.
+
+    Returns:
+        API key as string, or None if not set
+
+    Examples:
+        >>> import os
+        >>> os.environ["AGGREGATOR_API_KEY"] = "aggregator-key-123"
+        >>> get_aggregator_api_key()
+        'aggregator-key-123'
+    """
+    return os.getenv("AGGREGATOR_API_KEY") or os.getenv("API_KEY")
