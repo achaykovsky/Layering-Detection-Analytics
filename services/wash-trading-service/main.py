@@ -15,25 +15,40 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 
 from layering_detection.algorithms import WashTradingDetectionAlgorithm
 from services.shared.api_models import AlgorithmRequest, AlgorithmResponse, SuspiciousSequenceDTO
-from services.shared.config import get_port
+from services.shared.config import get_port, get_rate_limit_per_minute
 from services.shared.converters import (
     dto_to_transaction_event,
     suspicious_sequence_to_dto,
 )
 from services.shared.logging import get_logger, setup_logging
+from services.shared.rate_limiting import RateLimitMiddleware
+from services.shared.request_limits import RequestSizeLimitMiddleware
+from cachetools import LRUCache
+from services.shared.config import get_cache_size
+
+# Import service-specific config
+import importlib.util
+config_path = Path(__file__).parent / "config.py"
+spec = importlib.util.spec_from_file_location("wash_trading_config", config_path)
+wash_trading_config = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(wash_trading_config)
+get_api_key = wash_trading_config.get_api_key
 
 # Setup logging
 logger = setup_logging("wash-trading-service", log_level="INFO")
 service_logger = get_logger(__name__)
 
-# In-memory cache for idempotent operations
+# In-memory LRU cache for idempotent operations
 # Key: (request_id, event_fingerprint) tuple
 # Value: List of SuspiciousSequenceDTO results
-_result_cache: dict[tuple[str, str], list[SuspiciousSequenceDTO]] = {}
+# Size-limited to prevent memory exhaustion
+_cache_size = get_cache_size(default=1000)
+_result_cache: LRUCache[tuple[str, str], list[SuspiciousSequenceDTO]] = LRUCache(maxsize=_cache_size)
 
 # Create FastAPI app
 app = FastAPI(
@@ -41,6 +56,55 @@ app = FastAPI(
     description="Microservice for detecting suspicious wash trading patterns",
     version="1.0.0",
 )
+
+# Add request size limit middleware (10MB max)
+app.add_middleware(RequestSizeLimitMiddleware, max_request_size=10 * 1024 * 1024)
+
+# Add rate limiting middleware (100 requests/minute per IP, configurable)
+rate_limit = get_rate_limit_per_minute(default=100)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=rate_limit, excluded_paths={"/health"})
+
+# API Key authentication
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str:
+    """
+    Verify API key from request header.
+
+    Args:
+        api_key: API key from X-API-Key header
+
+    Returns:
+        API key if valid
+
+    Raises:
+        HTTPException: If API key is missing or invalid (HTTP 401)
+    """
+    expected_api_key = get_api_key()
+
+    # If no API key configured, skip authentication (development only)
+    if expected_api_key is None:
+        logger.warning("API_KEY not configured - authentication disabled (development mode)")
+        return ""
+
+    # Check if API key is provided
+    if api_key is None:
+        logger.warning("API key missing from request")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Provide X-API-Key header.",
+        )
+
+    # Verify API key matches
+    if api_key != expected_api_key:
+        logger.warning(f"Invalid API key provided (first 8 chars: {api_key[:8]}...)")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key.",
+        )
+
+    return api_key
 
 
 @app.get("/health")
@@ -71,7 +135,11 @@ async def root() -> dict[str, str]:
 
 
 @app.post("/detect", response_model=AlgorithmResponse)
-async def detect(request: AlgorithmRequest, http_request: Request) -> AlgorithmResponse:
+async def detect(
+    request: AlgorithmRequest,
+    http_request: Request,
+    api_key: str = Depends(verify_api_key),
+) -> AlgorithmResponse:
     """
     Detect suspicious wash trading patterns in transaction events.
 
@@ -181,5 +249,11 @@ if __name__ == "__main__":
 
     port = get_port(default=8002)
     logger.info(f"Starting Wash Trading Service on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        limit_concurrency=100,
+        limit_max_requests=1000,
+    )
 
