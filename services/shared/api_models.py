@@ -157,7 +157,12 @@ class AlgorithmRequest(BaseModel):
 
     request_id: str = Field(..., description="UUID request identifier")
     event_fingerprint: str = Field(..., description="SHA256 hexdigest of events")
-    events: list[TransactionEventDTO] = Field(..., min_length=1, description="Transaction events")
+    events: list[TransactionEventDTO] = Field(
+        ...,
+        min_length=1,
+        max_length=100000,
+        description="Transaction events (max 100,000 events to prevent DoS)",
+    )
 
     @field_validator("request_id")
     @classmethod
