@@ -141,7 +141,9 @@ class TestReadInputCsv:
             with pytest.raises(ValueError) as exc_info:
                 read_input_csv(csv_path)
 
-            assert "Missing required CSV columns" in str(exc_info.value)
+            # Error message is sanitized - should not expose internal details
+            assert str(exc_info.value) == "Invalid CSV format or data"
+            assert "Missing required CSV columns" not in str(exc_info.value)
         finally:
             csv_path.unlink()
 
@@ -302,5 +304,7 @@ class TestReadInputCsv:
             with pytest.raises(ValueError) as exc_info:
                 read_input_csv(dir_path)
 
-            assert "not a file" in str(exc_info.value).lower()
+            # Error message is sanitized - should not expose internal details
+            assert str(exc_info.value) == "Invalid file path"
+            assert "not a file" not in str(exc_info.value).lower()
 
