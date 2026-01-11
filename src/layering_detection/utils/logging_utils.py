@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterable
 
 from ..models import SuspiciousSequence
-from .security_utils import sanitize_for_csv, pseudonymize_account_id
+from .security_utils import get_pseudonymization_salt, sanitize_for_csv, pseudonymize_account_id
 
 
 def write_detection_logs(
@@ -29,6 +29,13 @@ def write_detection_logs(
     - product_id
     - order_timestamps        (semicolon-separated ISO timestamps)
     - duration_seconds        (float seconds between start and end)
+
+    Args:
+        path: Path to output CSV file
+        sequences: Iterable of suspicious sequences to log
+        pseudonymize_accounts: If True, pseudonymize account IDs using salt
+        salt: Salt for pseudonymization. If None and pseudonymize_accounts is True,
+              reads from PSEUDONYMIZATION_SALT environment variable.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -38,6 +45,10 @@ def write_detection_logs(
         "order_timestamps",
         "duration_seconds",
     ]
+
+    # Get salt from config if pseudonymizing and salt not provided
+    if pseudonymize_accounts and salt is None:
+        salt = get_pseudonymization_salt()
 
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
