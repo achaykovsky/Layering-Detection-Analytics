@@ -9,6 +9,7 @@ packages = [{ include = "layering_detection", from = "src" }]
 [tool.poetry.dependencies]
 python = "^3.11"
 pydantic = "^2.0.0"
+cachetools = "^5.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
