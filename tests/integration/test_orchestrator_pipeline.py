@@ -16,7 +16,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from services.shared.api_models import AggregateResponse, AlgorithmResponse
+from services.shared.api_models import AggregateRequest, AggregateResponse, AlgorithmResponse
 
 # Import orchestrator main module (handles hyphenated directory name)
 project_root = Path(__file__).parent.parent.parent
@@ -31,26 +31,32 @@ class TestOrchestratePipeline:
     """Tests for POST /orchestrate endpoint."""
 
     @pytest.fixture
+    def input_dir(self, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Create temporary input directory and set INPUT_DIR environment variable."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_dir_path = Path(tmpdir) / "input"
+            input_dir_path.mkdir(parents=True)
+            
+            # Set INPUT_DIR environment variable
+            monkeypatch.setenv("INPUT_DIR", str(input_dir_path))
+            
+            yield input_dir_path
+
+    @pytest.fixture
     def client(self) -> TestClient:
         """Create FastAPI test client."""
         return TestClient(app)
 
     @pytest.fixture
-    def sample_csv_file(self) -> Path:
-        """Create temporary CSV file with sample transaction data."""
+    def sample_csv_file(self, input_dir: Path) -> Path:
+        """Create temporary CSV file with sample transaction data within INPUT_DIR."""
         csv_content = """timestamp,account_id,product_id,side,price,quantity,event_type
 2025-01-15T10:30:00Z,ACC001,IBM,BUY,100.50,1000,ORDER_PLACED
 2025-01-15T10:31:00Z,ACC002,AAPL,SELL,150.75,500,ORDER_PLACED
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
-            f.write(csv_content)
-            temp_path = Path(f.name)
-
-        yield temp_path
-
-        # Cleanup
-        if temp_path.exists():
-            temp_path.unlink()
+        test_file = input_dir / "transactions.csv"
+        test_file.write_text(csv_content)
+        return test_file
 
     @pytest.mark.asyncio
     async def test_pipeline_success(self, client: TestClient, sample_csv_file: Path) -> None:
@@ -123,7 +129,7 @@ class TestOrchestratePipeline:
             # Call endpoint
             response = client.post(
                 "/orchestrate",
-                json={"input_file": str(sample_csv_file)},
+                json={"input_file": "transactions.csv"},
             )
 
             # Verify response
@@ -152,27 +158,22 @@ class TestOrchestratePipeline:
         assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_pipeline_empty_csv(self, client: TestClient) -> None:
+    async def test_pipeline_empty_csv(self, client: TestClient, input_dir: Path) -> None:
         """Test pipeline with empty CSV file."""
-        # Create empty CSV file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
-            f.write("timestamp,account_id,product_id,side,price,quantity,event_type\n")
-            temp_path = Path(f.name)
+        # Create empty CSV file within INPUT_DIR
+        empty_file = input_dir / "empty.csv"
+        empty_file.write_text("timestamp,account_id,product_id,side,price,quantity,event_type\n")
 
-        try:
-            response = client.post(
-                "/orchestrate",
-                json={"input_file": str(temp_path)},
-            )
+        response = client.post(
+            "/orchestrate",
+            json={"input_file": "empty.csv"},
+        )
 
-            assert response.status_code == 400
-            assert "no events" in response.json()["detail"].lower()
-        finally:
-            if temp_path.exists():
-                temp_path.unlink()
+        assert response.status_code == 400
+        assert "no events" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_pipeline_algorithm_service_failure(self, client: TestClient, sample_csv_file: Path) -> None:
+    async def test_pipeline_algorithm_service_failure(self, client: TestClient, sample_csv_file: Path, input_dir: Path) -> None:
         """Test pipeline when algorithm service fails."""
         request_id = str(uuid4())
 
@@ -205,10 +206,10 @@ class TestOrchestratePipeline:
         ) as mock_call_all:
             mock_call_all.side_effect = mock_call_all_services
 
-            # Call endpoint
+            # Call endpoint with relative path
             response = client.post(
                 "/orchestrate",
-                json={"input_file": str(sample_csv_file)},
+                json={"input_file": "transactions.csv"},
             )
 
             # Should fail validation (services exhausted but final_status=True, so validation passes)
@@ -218,7 +219,7 @@ class TestOrchestratePipeline:
             assert "did not complete" in detail or "validation error" in detail or "aggregator" in detail
 
     @pytest.mark.asyncio
-    async def test_pipeline_aggregator_failure(self, client: TestClient, sample_csv_file: Path) -> None:
+    async def test_pipeline_aggregator_failure(self, client: TestClient, sample_csv_file: Path, input_dir: Path) -> None:
         """Test pipeline when aggregator service fails."""
         request_id = str(uuid4())
 
@@ -277,7 +278,7 @@ class TestOrchestratePipeline:
             # Call endpoint
             response = client.post(
                 "/orchestrate",
-                json={"input_file": str(sample_csv_file)},
+                json={"input_file": "transactions.csv"},
             )
 
             assert response.status_code == 500
@@ -350,7 +351,7 @@ class TestOrchestratePipeline:
             # Call endpoint
             response = client.post(
                 "/orchestrate",
-                json={"input_file": str(sample_csv_file)},
+                json={"input_file": "transactions.csv"},
             )
 
             assert response.status_code == 500
@@ -425,7 +426,7 @@ class TestOrchestratePipeline:
             # Call endpoint
             response = client.post(
                 "/orchestrate",
-                json={"input_file": str(sample_csv_file)},
+                json={"input_file": "transactions.csv"},
             )
 
             assert response.status_code == 200
