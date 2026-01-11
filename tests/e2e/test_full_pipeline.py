@@ -148,23 +148,30 @@ def clean_output_dirs() -> Generator[None, None, None]:
 class TestFullPipeline:
     """Tests for full pipeline execution."""
 
+    @pytest.fixture
+    def api_key(self) -> str:
+        """Get API key for authentication (default from docker-compose)."""
+        return "dev-key-change-in-production"
+
     @pytest.mark.asyncio
     async def test_full_pipeline_execution(
         self,
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test full pipeline execution: CSV → orchestrator → algorithms → aggregator → output."""
         # Arrange
         orchestrator_url = "http://localhost:8000"
         input_file = sample_csv_file.name
 
-        # Act - Call orchestrator endpoint
+        # Act - Call orchestrator endpoint with API key
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
 
         # Assert
@@ -203,6 +210,7 @@ class TestFullPipeline:
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test output CSV files have correct format."""
         # Arrange
@@ -214,6 +222,7 @@ class TestFullPipeline:
             response = await client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
 
         assert response.status_code == 200
@@ -249,6 +258,7 @@ class TestFullPipeline:
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test retry scenario: temporarily stop service, verify retry."""
         # Arrange
@@ -265,6 +275,7 @@ class TestFullPipeline:
             request_task = client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
 
             # Wait a bit, then restart service
@@ -287,6 +298,7 @@ class TestFullPipeline:
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test fault isolation: one service fails, others continue."""
         # Arrange
@@ -302,6 +314,7 @@ class TestFullPipeline:
                 response = await client.post(
                     f"{orchestrator_url}/orchestrate",
                     json={"input_file": input_file},
+                    headers={"X-API-Key": api_key},
                 )
 
             # Assert - Should handle failure gracefully
@@ -322,6 +335,7 @@ class TestFullPipeline:
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test deduplication: same request_id + fingerprint returns cached result."""
         # Arrange
@@ -333,6 +347,7 @@ class TestFullPipeline:
             response1 = await client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
             assert response1.status_code == 200
             request_id1 = response1.json()["request_id"]
@@ -341,6 +356,7 @@ class TestFullPipeline:
             response2 = await client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
             assert response2.status_code == 200
             request_id2 = response2.json()["request_id"]
@@ -355,6 +371,7 @@ class TestFullPipeline:
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test completion validation: all services must complete."""
         # Arrange
@@ -366,6 +383,7 @@ class TestFullPipeline:
             response = await client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
 
         # Assert
@@ -384,6 +402,7 @@ class TestFullPipeline:
         docker_compose_setup,
         sample_csv_file: Path,
         clean_output_dirs,
+        api_key: str,
     ) -> None:
         """Test with real input CSV file."""
         # Arrange
@@ -398,6 +417,7 @@ class TestFullPipeline:
             response = await client.post(
                 f"{orchestrator_url}/orchestrate",
                 json={"input_file": input_file},
+                headers={"X-API-Key": api_key},
             )
 
         # Assert
