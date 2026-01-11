@@ -280,6 +280,116 @@ class TestCallAlgorithmService:
             assert url.endswith("/detect")
             assert "layering" in url.lower() or "8001" in url
 
+    @pytest.mark.asyncio
+    async def test_call_algorithm_service_includes_api_key_header(
+        self, sample_request: AlgorithmRequest
+    ) -> None:
+        """Test that API key header is included in algorithm service requests."""
+        expected_response = AlgorithmResponse(
+            request_id=sample_request.request_id,
+            service_name="layering",
+            status="success",
+            results=[],
+            error=None,
+            final_status=True,
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = expected_response.model_dump()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        api_key = "test-layering-api-key-123"
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with patch.object(
+                orchestrator_client, "get_layering_api_key", return_value=api_key
+            ):
+                await call_algorithm_service("layering", sample_request, timeout=30)
+
+                # Verify API key header was included
+                call_args = mock_client.post.call_args
+                assert call_args is not None
+                headers = call_args[1]["headers"]  # Keyword argument
+                assert "X-API-Key" in headers
+                assert headers["X-API-Key"] == api_key
+
+    @pytest.mark.asyncio
+    async def test_call_algorithm_service_no_api_key_when_not_configured(
+        self, sample_request: AlgorithmRequest
+    ) -> None:
+        """Test that API key header is not included when API key is not configured."""
+        expected_response = AlgorithmResponse(
+            request_id=sample_request.request_id,
+            service_name="layering",
+            status="success",
+            results=[],
+            error=None,
+            final_status=True,
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = expected_response.model_dump()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with patch.object(orchestrator_client, "get_layering_api_key", return_value=None):
+                await call_algorithm_service("layering", sample_request, timeout=30)
+
+                # Verify API key header was not included
+                call_args = mock_client.post.call_args
+                assert call_args is not None
+                headers = call_args[1]["headers"]  # Keyword argument
+                assert "X-API-Key" not in headers
+
+    @pytest.mark.asyncio
+    async def test_call_algorithm_service_wash_trading_api_key(
+        self, sample_request: AlgorithmRequest
+    ) -> None:
+        """Test that wash trading service gets correct API key."""
+        expected_response = AlgorithmResponse(
+            request_id=sample_request.request_id,
+            service_name="wash_trading",
+            status="success",
+            results=[],
+            error=None,
+            final_status=True,
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = expected_response.model_dump()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        api_key = "test-wash-trading-api-key-123"
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with patch.object(
+                orchestrator_client, "get_wash_trading_api_key", return_value=api_key
+            ):
+                await call_algorithm_service("wash_trading", sample_request, timeout=30)
+
+                # Verify correct API key header was included
+                call_args = mock_client.post.call_args
+                assert call_args is not None
+                headers = call_args[1]["headers"]  # Keyword argument
+                assert "X-API-Key" in headers
+                assert headers["X-API-Key"] == api_key
+
 
 class TestCallAggregatorService:
     """Tests for call_aggregator_service function."""
@@ -564,4 +674,74 @@ class TestCallAggregatorService:
             httpx_call_args = mock_httpx.call_args
             assert httpx_call_args is not None
             assert httpx_call_args[1]["timeout"] == 60
+
+    @pytest.mark.asyncio
+    async def test_call_aggregator_service_includes_api_key_header(
+        self, sample_aggregate_request: AggregateRequest
+    ) -> None:
+        """Test that API key header is included in aggregator service requests."""
+        expected_response = AggregateResponse(
+            status="completed",
+            merged_count=0,
+            failed_services=[],
+            error=None,
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = expected_response.model_dump()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        api_key = "test-aggregator-api-key-123"
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with patch.object(
+                orchestrator_client, "get_aggregator_api_key", return_value=api_key
+            ):
+                await call_aggregator_service(sample_aggregate_request, timeout=60)
+
+                # Verify API key header was included
+                call_args = mock_client.post.call_args
+                assert call_args is not None
+                headers = call_args[1]["headers"]  # Keyword argument
+                assert "X-API-Key" in headers
+                assert headers["X-API-Key"] == api_key
+
+    @pytest.mark.asyncio
+    async def test_call_aggregator_service_no_api_key_when_not_configured(
+        self, sample_aggregate_request: AggregateRequest
+    ) -> None:
+        """Test that API key header is not included when API key is not configured."""
+        expected_response = AggregateResponse(
+            status="completed",
+            merged_count=0,
+            failed_services=[],
+            error=None,
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = expected_response.model_dump()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with patch.object(
+                orchestrator_client, "get_aggregator_api_key", return_value=None
+            ):
+                await call_aggregator_service(sample_aggregate_request, timeout=60)
+
+                # Verify API key header was not included
+                call_args = mock_client.post.call_args
+                assert call_args is not None
+                headers = call_args[1]["headers"]  # Keyword argument
+                assert "X-API-Key" not in headers
 
