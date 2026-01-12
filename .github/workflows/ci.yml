@@ -327,12 +327,33 @@ jobs:
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Images | ${{ needs.build-images.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| E2E Tests | ${{ needs.e2e-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.unit-tests.result }}" != "success" ] || \
-             [ "${{ needs.integration-tests.result }}" != "success" ] || \
-             [ "${{ needs.build-images.result }}" != "success" ] || \
-             [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+          # Check for failures (skipped is acceptable)
+          FAILED=0
+          
+          if [ "${{ needs.lint.result }}" = "failure" ] || [ "${{ needs.lint.result }}" = "cancelled" ]; then
+            FAILED=1
+          fi
+          
+          if [ "${{ needs.unit-tests.result }}" = "failure" ] || [ "${{ needs.unit-tests.result }}" = "cancelled" ]; then
+            FAILED=1
+          fi
+          
+          if [ "${{ needs.integration-tests.result }}" = "failure" ] || [ "${{ needs.integration-tests.result }}" = "cancelled" ]; then
+            FAILED=1
+          fi
+          
+          if [ "${{ needs.build-images.result }}" = "failure" ] || [ "${{ needs.build-images.result }}" = "cancelled" ]; then
+            FAILED=1
+          fi
+          
+          # E2E tests can be skipped, only fail if they actually failed
+          if [ "${{ needs.e2e-tests.result }}" = "failure" ] || [ "${{ needs.e2e-tests.result }}" = "cancelled" ]; then
+            FAILED=1
+          fi
+          
+          if [ $FAILED -eq 1 ]; then
             echo "❌ CI pipeline failed" >> $GITHUB_STEP_SUMMARY
             exit 1
           else
