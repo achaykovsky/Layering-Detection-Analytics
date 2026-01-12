@@ -9,7 +9,8 @@ on:
 env:
   PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
+  # Convert repository name to lowercase for Docker tags (registry requirement)
+  IMAGE_PREFIX: ${{ github.repository_owner }}/layering-detection-analytics
 
 jobs:
   # Lint and type check (fastest, fail early)
@@ -167,7 +168,9 @@ jobs:
           file: services/${{ matrix.service }}/Dockerfile
           # Always build, never push (avoids org package permission issues)
           # Images are built for testing and caching purposes
+          # Use load: true to make image available locally (required when not pushing)
           push: false
+          load: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:local
           cache-from: type=gha
           cache-to: type=gha,mode=max
