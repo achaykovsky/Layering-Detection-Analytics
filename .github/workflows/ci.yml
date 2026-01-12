@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Permissions for security scanning and SARIF upload
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 env:
   PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
@@ -237,11 +243,30 @@ jobs:
           # Fail on critical vulnerabilities
           severity: "CRITICAL,HIGH"
 
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Check SARIF file exists
         if: always()
+        run: |
+          if [ -f "trivy-results-${{ matrix.service }}.sarif" ]; then
+            echo "✓ SARIF file exists: trivy-results-${{ matrix.service }}.sarif"
+            ls -lh "trivy-results-${{ matrix.service }}.sarif"
+          else
+            echo "Warning: SARIF file not found: trivy-results-${{ matrix.service }}.sarif"
+            echo "This may indicate Trivy scan failed or produced no results"
+            exit 1
+          fi
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        # Only upload on push events or PRs from same repo (not forks)
+        # Forks don't have security-events: write permission
+        if: always() && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        continue-on-error: true
         with:
           sarif_file: "trivy-results-${{ matrix.service }}.sarif"
+          # Wait for processing to complete
+          wait-for-processing: false
+          # Category for organizing results by service
+          category: "trivy-${{ matrix.service }}"
 
   # E2E tests (require Docker Compose, run last)
   e2e-tests:
