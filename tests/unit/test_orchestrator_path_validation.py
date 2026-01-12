@@ -205,12 +205,12 @@ class TestValidateInputPath:
             validate_input_path("/", input_dir)
 
     def test_windows_absolute_path_rejected(self, tmp_path: Path) -> None:
-        """Test that Windows absolute paths outside input_dir are rejected."""
+        """Test that Windows absolute paths are rejected on all platforms."""
         input_dir = str(tmp_path / "input")
         Path(input_dir).mkdir(parents=True)
 
-        # Simulate Windows absolute path (if on Windows, this would be real)
-        # On Unix, this will be treated as relative, but test the logic
+        # Windows absolute path - should be rejected even on Unix systems
+        # (security: prevents path traversal attempts using Windows-style paths)
         windows_path = "C:\\Windows\\System32\\config\\sam"
         with pytest.raises(ValueError, match="Path must be within INPUT_DIR"):
             validate_input_path(windows_path, input_dir)

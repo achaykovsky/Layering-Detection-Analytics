@@ -44,6 +44,16 @@ def validate_input_path(input_file: str, input_dir: str) -> Path:
     input_dir_resolved = Path(input_dir).resolve()
     input_file_path = Path(input_file)
 
+    # Detect Windows absolute paths (e.g., "C:\Windows\...") even on Unix systems
+    # This prevents path traversal attempts using Windows-style paths
+    if len(input_file) >= 2 and input_file[1] == ":" and input_file[0].isalpha():
+        # Windows absolute path detected (drive letter + colon)
+        raise ValueError(
+            f"Path must be within INPUT_DIR. "
+            f"Windows absolute paths are not allowed. "
+            f"Provided: {input_file}, Allowed directory: {input_dir_resolved}"
+        )
+
     # If input_file is absolute, resolve it directly
     # If relative, resolve it relative to input_dir
     if input_file_path.is_absolute():
