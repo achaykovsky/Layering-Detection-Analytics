@@ -195,13 +195,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          # Build image locally for security scanning
+          # Use cache from build-images job for faster builds
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Verify image exists locally
+        run: |
+          image_name="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:local"
+          if docker image inspect "$image_name" > /dev/null 2>&1; then
+            echo "✓ Image $image_name is available locally"
+            docker images | grep "${{ matrix.service }}" || true
+          else
+            echo "ERROR: Image $image_name not found locally"
+            docker images
+            exit 1
+          fi
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          # Scan locally built image (tagged as :local)
+          # Scan locally built image
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:local
           format: "sarif"
           output: "trivy-results-${{ matrix.service }}.sarif"
+          # Scan vulnerabilities and secrets
+          scanners: "vuln,secret"
+          # Fail on critical vulnerabilities
+          severity: "CRITICAL,HIGH"
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
