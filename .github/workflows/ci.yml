@@ -334,10 +334,14 @@ jobs:
             echo "2025-01-15T10:00:10Z,ACC001,IBM,SELL,101.00,1500,TRADE" >> input/sample_transactions.csv
             echo "Created minimal test CSV"
           fi
-          # Create output and logs directories with proper permissions
+          # Create output and logs directories with proper ownership
+          # Match container UID/GID (1000:1000) to ensure containers can write
+          # Security: Use proper ownership instead of world-writable (777)
           mkdir -p output logs
+          sudo chown -R 1000:1000 output logs
           chmod 755 output logs
-          echo "✓ Created output and logs directories"
+          echo "✓ Created output and logs directories with proper ownership (UID/GID 1000:1000)"
+          ls -ld output logs
 
       - name: Build Docker Compose services
         run: docker-compose build
