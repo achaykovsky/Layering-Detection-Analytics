@@ -334,8 +334,10 @@ jobs:
             echo "2025-01-15T10:00:10Z,ACC001,IBM,SELL,101.00,1500,TRADE" >> input/sample_transactions.csv
             echo "Created minimal test CSV"
           fi
-          # Create output and logs directories
+          # Create output and logs directories with proper permissions
           mkdir -p output logs
+          chmod 755 output logs
+          echo "✓ Created output and logs directories"
 
       - name: Build Docker Compose services
         run: docker-compose build
@@ -423,27 +425,121 @@ jobs:
             ls -la input/ || echo "Input directory does not exist"
             exit 1
           fi
+          
+          # Verify service-to-service communication via Docker network
+          echo "=== Verifying service-to-service communication ==="
+          echo "Testing orchestrator -> layering service communication..."
+          if docker exec orchestrator-service python -c "import urllib.request; urllib.request.urlopen('http://layering-service:8001/health', timeout=5).read()" > /dev/null 2>&1; then
+            echo "✓ Orchestrator can reach layering service"
+          else
+            echo "✗ Warning: Orchestrator cannot reach layering service"
+            docker-compose logs orchestrator-service --tail=10
+            docker-compose logs layering-service --tail=10
+          fi
+          
+          echo "Testing orchestrator -> wash-trading service communication..."
+          if docker exec orchestrator-service python -c "import urllib.request; urllib.request.urlopen('http://wash-trading-service:8002/health', timeout=5).read()" > /dev/null 2>&1; then
+            echo "✓ Orchestrator can reach wash-trading service"
+          else
+            echo "✗ Warning: Orchestrator cannot reach wash-trading service"
+            docker-compose logs wash-trading-service --tail=10
+          fi
+          
+          echo "Testing orchestrator -> aggregator service communication..."
+          if docker exec orchestrator-service python -c "import urllib.request; urllib.request.urlopen('http://aggregator-service:8003/health', timeout=5).read()" > /dev/null 2>&1; then
+            echo "✓ Orchestrator can reach aggregator service"
+          else
+            echo "✗ Warning: Orchestrator cannot reach aggregator service"
+            docker-compose logs aggregator-service --tail=10
+          fi
+          
+          echo "=== Service network configuration ==="
+          docker network inspect layering-network --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{println}}{{end}}' || echo "Network inspection failed"
+
+      - name: Run smoke test (verify services can process requests)
+        run: |
+          echo "=== Running smoke test ==="
+          # Give services additional time to fully initialize after health checks
+          echo "Waiting 10 seconds for services to fully initialize..."
+          sleep 10
+          
+          # Verify input file exists and is readable
+          if [ ! -f input/sample_transactions.csv ]; then
+            echo "ERROR: Input file not found: input/sample_transactions.csv"
+            ls -la input/
+            exit 1
+          fi
+          
+          echo "Input file exists: $(ls -lh input/sample_transactions.csv)"
+          echo "First few lines of input file:"
+          head -3 input/sample_transactions.csv
+          
+          # Test a simple orchestrator request to verify services can communicate
+          echo "Sending test request to orchestrator..."
+          response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8000/orchestrate \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: dev-key-change-in-production" \
+            -d '{"input_file": "sample_transactions.csv"}' 2>&1 || echo "000")
+          http_code=$(echo "$response" | tail -n1)
+          response_body=$(echo "$response" | head -n-1)
+          
+          echo "HTTP Status: $http_code"
+          echo "Response body:"
+          echo "$response_body" | python3 -m json.tool 2>/dev/null || echo "$response_body"
+          
+          if [ "$http_code" = "200" ]; then
+            echo "✓ Smoke test passed - services can process requests"
+          else
+            echo "✗ Smoke test failed with HTTP $http_code"
+            echo "=== Service Logs for debugging ==="
+            echo "=== Orchestrator Service Logs ==="
+            docker-compose logs orchestrator-service --tail=50
+            echo "=== Layering Service Logs ==="
+            docker-compose logs layering-service --tail=30
+            echo "=== Wash Trading Service Logs ==="
+            docker-compose logs wash-trading-service --tail=30
+            echo "=== Aggregator Service Logs ==="
+            docker-compose logs aggregator-service --tail=30
+            echo "=== Container Status ==="
+            docker-compose ps
+            exit 1
+          fi
 
       - name: Run E2E tests
+        id: e2e-tests
         run: poetry run pytest tests/e2e/ -v --tb=short
 
       - name: Show service logs on failure
-        if: failure()
+        if: failure() || steps.e2e-tests.outcome == 'failure'
         run: |
-          echo "=== Full Service Logs ==="
-          docker-compose logs --tail=200
+          echo "=== E2E Test Failure Diagnostics ==="
           echo "=== Service Status ==="
           docker-compose ps
+          echo ""
           echo "=== Container Health ==="
           docker ps -a
-          echo "=== Recent Orchestrator Logs ==="
+          echo ""
+          echo "=== Full Service Logs (last 100 lines) ==="
+          docker-compose logs --tail=100
+          echo ""
+          echo "=== Orchestrator Service Logs (last 50 lines) ==="
           docker-compose logs orchestrator-service --tail=50
-          echo "=== Recent Layering Service Logs ==="
+          echo ""
+          echo "=== Layering Service Logs (last 50 lines) ==="
           docker-compose logs layering-service --tail=50
-          echo "=== Recent Wash Trading Service Logs ==="
+          echo ""
+          echo "=== Wash Trading Service Logs (last 50 lines) ==="
           docker-compose logs wash-trading-service --tail=50
-          echo "=== Recent Aggregator Service Logs ==="
+          echo ""
+          echo "=== Aggregator Service Logs (last 50 lines) ==="
           docker-compose logs aggregator-service --tail=50
+          echo ""
+          echo "=== Service Network Connectivity ==="
+          docker network inspect layering-network --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{println}}{{end}}' || echo "Network inspection failed"
+          echo ""
+          echo "=== Test Input File ==="
+          ls -la input/ || echo "Input directory not found"
+          cat input/sample_transactions.csv 2>/dev/null | head -5 || echo "Could not read input file"
 
       - name: Stop Docker Compose services
         if: always()
