@@ -21,6 +21,32 @@ import pytest
 project_root = Path(__file__).parent.parent.parent
 
 
+def assert_response_ok(response: httpx.Response, context: str = "") -> None:
+    """
+    Assert response status is 200, with detailed error message if not.
+    
+    Args:
+        response: HTTP response object
+        context: Additional context for error message
+    """
+    if response.status_code != 200:
+        error_detail = response.text if hasattr(response, 'text') else str(response.content)
+        try:
+            error_json = response.json()
+            error_detail = error_json.get('detail', error_json.get('error', error_detail))
+        except Exception:
+            pass
+        
+        error_msg = (
+            f"Expected status 200, got {response.status_code}. "
+            f"Error: {error_detail}"
+        )
+        if context:
+            error_msg = f"{context}. {error_msg}"
+        
+        pytest.fail(error_msg)
+
+
 def docker_compose_up() -> None:
     """Start docker-compose services."""
     subprocess.run(
@@ -175,7 +201,7 @@ class TestFullPipeline:
             )
 
         # Assert
-        assert response.status_code == 200
+        assert_response_ok(response, context=f"test_full_pipeline_execution: input_file={input_file}")
         data = response.json()
         assert data["status"] == "completed"
         assert data["event_count"] > 0
@@ -225,7 +251,8 @@ class TestFullPipeline:
                 headers={"X-API-Key": api_key},
             )
 
-        assert response.status_code == 200
+        # Assert
+        assert_response_ok(response, context=f"test_output_csv_format: input_file={input_file}")
 
         # Assert - Verify CSV format
         output_dir = project_root / "output"
@@ -287,7 +314,19 @@ class TestFullPipeline:
             response = await request_task
 
         # Assert - Should eventually succeed after retry
-        assert response.status_code == 200
+        # Note: This test may fail due to timing, so we check status codes
+        if response.status_code != 200:
+            # Show error but don't fail - retry scenario may have timing issues
+            error_detail = response.text if hasattr(response, 'text') else str(response.content)
+            try:
+                error_json = response.json()
+                error_detail = error_json.get('detail', error_json.get('error', error_detail))
+            except Exception:
+                pass
+            pytest.fail(
+                f"test_retry_scenario: Expected status 200, got {response.status_code}. "
+                f"Error: {error_detail}"
+            )
         data = response.json()
         # May succeed or fail depending on timing, but should handle gracefully
         assert data["status"] in ("completed", "failed")
@@ -349,7 +388,7 @@ class TestFullPipeline:
                 json={"input_file": input_file},
                 headers={"X-API-Key": api_key},
             )
-            assert response1.status_code == 200
+            assert_response_ok(response1, context=f"test_deduplication: first request, input_file={input_file}")
             request_id1 = response1.json()["request_id"]
 
             # Run again with same file (should generate same fingerprint)
@@ -358,7 +397,7 @@ class TestFullPipeline:
                 json={"input_file": input_file},
                 headers={"X-API-Key": api_key},
             )
-            assert response2.status_code == 200
+            assert_response_ok(response2, context=f"test_deduplication: second request, input_file={input_file}")
             request_id2 = response2.json()["request_id"]
 
         # Assert - Request IDs should be different (new request each time)
@@ -387,7 +426,7 @@ class TestFullPipeline:
             )
 
         # Assert
-        assert response.status_code == 200
+        assert_response_ok(response, context=f"test_completion_validation: input_file={input_file}")
         data = response.json()
 
         # If completed, all services should have finished
@@ -421,7 +460,7 @@ class TestFullPipeline:
             )
 
         # Assert
-        assert response.status_code == 200
+        assert_response_ok(response, context=f"test_real_input_csv: input_file={input_file}")
         data = response.json()
         assert data["status"] == "completed"
         assert data["event_count"] > 0
