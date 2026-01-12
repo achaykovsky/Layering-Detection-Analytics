@@ -27,9 +27,17 @@ WORKDIR /app/services/layering-service
 # Install service dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create a non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser && \
-    chown -R appuser:appuser /app
+# Create output and logs directories before switching to non-root user
+# These directories may be mounted as volumes, but we ensure they exist with proper permissions
+RUN mkdir -p /app/output /app/logs
+
+# Create a non-root user with fixed UID/GID (1000:1000) for consistent permissions
+# Fixed UID/GID ensures proper ownership when volumes are mounted from host
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g 1000 --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app && \
+    chmod 755 /app/output /app/logs
+
 USER appuser
 
 # Expose service port
