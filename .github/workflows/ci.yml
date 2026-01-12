@@ -257,6 +257,27 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
           docker-compose --version
 
+      - name: Prepare input directory and test data
+        run: |
+          # Create input directory if it doesn't exist
+          mkdir -p input
+          # Copy sample CSV for E2E tests
+          if [ -f tests/e2e/fixtures/sample_transactions.csv ]; then
+            cp tests/e2e/fixtures/sample_transactions.csv input/sample_transactions.csv
+            echo "Sample CSV copied to input directory"
+            ls -la input/
+          else
+            echo "Warning: sample_transactions.csv not found"
+            # Create a minimal test CSV
+            echo "timestamp,account_id,product_id,side,price,quantity,event_type" > input/sample_transactions.csv
+            echo "2025-01-15T10:00:00Z,ACC001,IBM,BUY,100.50,1000,ORDER_PLACED" >> input/sample_transactions.csv
+            echo "2025-01-15T10:00:05Z,ACC001,IBM,BUY,100.75,500,ORDER_PLACED" >> input/sample_transactions.csv
+            echo "2025-01-15T10:00:10Z,ACC001,IBM,SELL,101.00,1500,TRADE" >> input/sample_transactions.csv
+            echo "Created minimal test CSV"
+          fi
+          # Create output and logs directories
+          mkdir -p output logs
+
       - name: Build Docker Compose services
         run: docker-compose build
 
@@ -267,26 +288,82 @@ jobs:
         run: |
           timeout=120
           elapsed=0
+          echo "Waiting for services to become healthy..."
           while [ $elapsed -lt $timeout ]; do
-            if curl -f http://localhost:8000/health && \
-               curl -f http://localhost:8001/health && \
-               curl -f http://localhost:8002/health && \
-               curl -f http://localhost:8003/health; then
-              echo "All services are healthy"
+            # Check each service individually for better diagnostics
+            orchestrator_ok=false
+            layering_ok=false
+            wash_trading_ok=false
+            aggregator_ok=false
+            
+            if curl -f -s http://localhost:8000/health > /dev/null 2>&1; then
+              orchestrator_ok=true
+              echo "✓ Orchestrator service is healthy"
+            fi
+            
+            if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
+              layering_ok=true
+              echo "✓ Layering service is healthy"
+            fi
+            
+            if curl -f -s http://localhost:8002/health > /dev/null 2>&1; then
+              wash_trading_ok=true
+              echo "✓ Wash trading service is healthy"
+            fi
+            
+            if curl -f -s http://localhost:8003/health > /dev/null 2>&1; then
+              aggregator_ok=true
+              echo "✓ Aggregator service is healthy"
+            fi
+            
+            if [ "$orchestrator_ok" = true ] && [ "$layering_ok" = true ] && [ "$wash_trading_ok" = true ] && [ "$aggregator_ok" = true ]; then
+              echo "All services are healthy!"
+              # Give services a moment to fully initialize
+              echo "Waiting 5 seconds for services to fully initialize..."
+              sleep 5
               exit 0
             fi
+            
             echo "Waiting for services... ($elapsed/$timeout seconds)"
             sleep 5
             elapsed=$((elapsed + 5))
           done
+          
           echo "Services did not become healthy in time"
-          echo "=== Service Logs ==="
-          docker-compose logs --tail=100
           echo "=== Service Status ==="
           docker-compose ps
           echo "=== Container Health ==="
           docker ps -a
+          echo "=== Service Logs ==="
+          docker-compose logs --tail=100
+          echo "=== Health Check Responses ==="
+          curl -v http://localhost:8000/health || echo "Orchestrator health check failed"
+          curl -v http://localhost:8001/health || echo "Layering health check failed"
+          curl -v http://localhost:8002/health || echo "Wash trading health check failed"
+          curl -v http://localhost:8003/health || echo "Aggregator health check failed"
           exit 1
+
+      - name: Verify services are ready
+        run: |
+          echo "=== Verifying service readiness ==="
+          # Test orchestrator endpoint
+          response=$(curl -s -w "\n%{http_code}" http://localhost:8000/ || echo "000")
+          http_code=$(echo "$response" | tail -n1)
+          if [ "$http_code" != "200" ]; then
+            echo "ERROR: Orchestrator service returned HTTP $http_code"
+            docker-compose logs orchestrator-service --tail=20
+            exit 1
+          fi
+          echo "✓ Orchestrator service is ready"
+          
+          # Verify input file is accessible
+          if [ -f input/sample_transactions.csv ]; then
+            echo "✓ Input file exists: $(ls -lh input/sample_transactions.csv)"
+          else
+            echo "ERROR: Input file not found"
+            ls -la input/ || echo "Input directory does not exist"
+            exit 1
+          fi
 
       - name: Run E2E tests
         run: poetry run pytest tests/e2e/ -v --tb=short
