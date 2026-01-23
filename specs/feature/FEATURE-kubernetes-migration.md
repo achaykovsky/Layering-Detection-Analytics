@@ -236,7 +236,7 @@ k8s/
 ├── base/
 │   ├── namespace.yaml
 │   ├── configmap.yaml
-│   ├── secrets.yaml (or external-secrets/)
+│   ├── external-secrets.yaml
 │   └── storage/
 │       ├── storageclass.yaml (EFS CSI)
 │       ├── input-pvc.yaml
@@ -262,8 +262,8 @@ k8s/
 ├── ingress/
 │   └── ingress.yaml
 ├── monitoring/
-│   ├── service-monitor.yaml (Prometheus)
-│   └── dashboard.yaml (Grafana)
+│   ├── fluent-bit.yaml
+│   └── cloudwatch-dashboard.yaml
 └── overlays/
     ├── dev/
     ├── staging/

@@ -4,6 +4,8 @@
 
 This document breaks down the Kubernetes migration into atomic, implementable tasks ordered by dependencies. Each task is designed to be completable in 1-4 hours with clear acceptance criteria.
 
+**Task Ordering Principle**: Tasks are ordered by dependencies - each task lists its dependencies, and tasks must be completed in order to unblock dependent tasks.
+
 ## Key Decisions
 
 **Platform**: AWS EKS (Kubernetes 1.24+)  
@@ -25,29 +27,9 @@ This document breaks down the Kubernetes migration into atomic, implementable ta
 - ✅ **Complete**: Finished and verified
 - ❌ **Blocked**: Cannot proceed due to dependency
 
-## Implementation Phases
-
-### Phase 1: Core Kubernetes Resources
-**Goal**: Set up namespace, ConfigMaps, Secrets, and base infrastructure.
-
-### Phase 2: Storage Migration
-**Goal**: Migrate EFS volumes to Kubernetes PersistentVolumes.
-
-### Phase 3: Deployments & Services
-**Goal**: Convert ECS services to Kubernetes Deployments and Services.
-
-### Phase 4: Auto-Scaling
-**Goal**: Replace ECS auto-scaling with Kubernetes HPA.
-
-### Phase 5: Monitoring & Logging
-**Goal**: Set up logging and metrics collection in Kubernetes.
-
-### Phase 6: CI/CD Updates
-**Goal**: Update CI/CD pipeline for Kubernetes deployment.
-
 ---
 
-## Phase 1: Core Kubernetes Resources
+## Phase 1: Foundation & Prerequisites
 
 ### Task 1.1: Create Kubernetes Directory Structure
 **Type**: Infra  
@@ -77,10 +59,10 @@ Create the `k8s/` directory structure following the planned organization.
 
 ---
 
-### Task 1.2: Create Namespace and Service Accounts
+### Task 1.2: Create Namespaces and Service Accounts
 **Type**: Infra  
 **Priority**: P0 (Critical)  
-**Effort**: ~1h  
+**Effort**: ~1.5h  
 **Dependencies**: Task 1.1  
 **Status**: ⏳ Pending
 
@@ -143,47 +125,73 @@ Extract environment variables from Terraform ECS configuration and create Kubern
 **Notes**:
 - Do not include secrets in ConfigMaps (use Secrets instead)
 - Consider separate ConfigMaps per service for better isolation
+- Can be done in parallel with Task 1.4 (External Secrets Operator setup)
 
 ---
 
-### Task 1.4: Create Kubernetes Secrets
+### Task 1.4: Install External Secrets Operator
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
-**Dependencies**: Task 1.1  
+**Dependencies**: Task 1.1, Task 1.2  
 **Status**: ⏳ Pending
 
 **Description**:
-Set up External Secrets Operator to sync secrets from AWS Secrets Manager. Create ExternalSecret resources for `API_KEY` and `PSEUDONYMIZATION_SALT`.
+Install External Secrets Operator in EKS cluster and configure IRSA for AWS Secrets Manager access.
 
 **Acceptance Criteria**:
-- [ ] Install External Secrets Operator in cluster (via Helm or kubectl)
+- [ ] Install External Secrets Operator via Helm or kubectl
 - [ ] Create IAM role for External Secrets Operator with Secrets Manager read permissions
 - [ ] Configure IRSA for External Secrets Operator service account
+- [ ] Verify External Secrets Operator is running and healthy
+- [ ] Test External Secrets Operator can access AWS Secrets Manager
+- [ ] Document installation and configuration process
+
+**Files to Create**:
+- `k8s/base/external-secrets-operator-install.md` (installation instructions)
+
+**Notes**:
+- External Secrets Operator must be installed before creating ExternalSecret resources
+- IRSA is required for External Secrets Operator to access Secrets Manager
+- Can use Helm chart: `helm install external-secrets external-secrets/external-secrets`
+
+---
+
+### Task 1.5: Create ExternalSecret Resources
+**Type**: Infra  
+**Priority**: P0 (Critical)  
+**Effort**: ~1.5h  
+**Dependencies**: Task 1.4  
+**Status**: ⏳ Pending
+
+**Description**:
+Create ExternalSecret resources to sync secrets from AWS Secrets Manager.
+
+**Acceptance Criteria**:
 - [ ] Create `k8s/base/external-secrets.yaml` with ExternalSecret resources
 - [ ] ExternalSecret for `API_KEY` (for all services)
 - [ ] ExternalSecret for `PSEUDONYMIZATION_SALT` (for aggregator only)
-- [ ] ExternalSecrets sync secrets from AWS Secrets Manager
-- [ ] Secrets are accessible to appropriate pods
-- [ ] Document secret management approach
+- [ ] ExternalSecrets reference existing AWS Secrets Manager secrets
 - [ ] `kubectl apply -f k8s/base/external-secrets.yaml` creates ExternalSecrets successfully
 - [ ] Verify secrets are synced and accessible in pods
+- [ ] Secrets appear as Kubernetes Secrets in namespace
 
 **Files to Create**:
 - `k8s/base/external-secrets.yaml`
-- `k8s/base/external-secrets-operator-install.md` (installation instructions)
+
+**Files to Review**:
+- `terraform/` (to find existing Secrets Manager secret names)
 
 **Notes**:
 - External Secrets Operator syncs from existing AWS Secrets Manager
 - No need to duplicate secrets or commit to git
-- IRSA required for External Secrets Operator to access Secrets Manager
 - Secrets are automatically synced and updated when changed in Secrets Manager
 
 ---
 
 ## Phase 2: Storage Migration
 
-### Task 2.1: Set Up StorageClass for EFS (AWS EKS)
+### Task 2.1: Install EFS CSI Driver
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
@@ -191,37 +199,59 @@ Set up External Secrets Operator to sync secrets from AWS Secrets Manager. Creat
 **Status**: ⏳ Pending
 
 **Description**:
-Install EFS CSI driver and create StorageClass for EFS volumes in AWS EKS. Reuse existing EFS file system from ECS deployment.
+Install EFS CSI driver in EKS cluster for EFS volume support.
 
 **Acceptance Criteria**:
 - [ ] EFS CSI driver is installed in EKS cluster (or document installation steps)
+- [ ] Verify EFS CSI driver is running and healthy
+- [ ] Document EFS CSI driver installation process
 - [ ] Identify existing EFS file system ID from ECS Terraform configuration
-- [ ] Create `k8s/base/storage/storageclass.yaml` with StorageClass `efs-sc`
-- [ ] StorageClass uses EFS CSI provisioner
-- [ ] StorageClass references existing EFS file system (or creates new one)
-- [ ] StorageClass is set as default (optional)
-- [ ] `kubectl apply -f k8s/base/storage/storageclass.yaml` creates StorageClass
-- [ ] Document EFS CSI driver installation and configuration
 
 **Files to Create**:
-- `k8s/base/storage/storageclass.yaml`
-- `k8s/base/storage/README.md` (EFS CSI driver installation instructions)
+- `k8s/base/storage/efs-csi-install.md` (installation instructions)
 
 **Files to Review**:
 - `terraform/` (to find existing EFS file system ID)
 
 **Notes**:
-- EFS CSI driver must be installed before creating PVCs
+- EFS CSI driver must be installed before creating StorageClass
+- Can be installed via EKS add-on or manually
+- Reuse existing EFS file system to maintain data continuity
+
+---
+
+### Task 2.2: Create StorageClass for EFS
+**Type**: Infra  
+**Priority**: P0 (Critical)  
+**Effort**: ~1h  
+**Dependencies**: Task 2.1  
+**Status**: ⏳ Pending
+
+**Description**:
+Create StorageClass for EFS volumes using EFS CSI driver.
+
+**Acceptance Criteria**:
+- [ ] Create `k8s/base/storage/storageclass.yaml` with StorageClass `efs-sc`
+- [ ] StorageClass uses EFS CSI provisioner
+- [ ] StorageClass references existing EFS file system (or creates new one)
+- [ ] StorageClass is set as default (optional)
+- [ ] `kubectl apply -f k8s/base/storage/storageclass.yaml` creates StorageClass
+- [ ] Document StorageClass configuration
+
+**Files to Create**:
+- `k8s/base/storage/storageclass.yaml`
+
+**Notes**:
 - Reuse existing EFS file system to maintain data continuity
 - EFS supports ReadWriteMany access mode (multiple pods can mount)
 
 ---
 
-### Task 2.2: Create PersistentVolumeClaims
+### Task 2.3: Create PersistentVolumeClaims
 **Type**: Infra  
 **Priority**: P0 (Critical)  
-**Effort**: ~2h  
-**Dependencies**: Task 2.1  
+**Effort**: ~1.5h  
+**Dependencies**: Task 2.2  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -231,7 +261,7 @@ Create PersistentVolumeClaims for input, output, and logs directories.
 - [ ] Create `k8s/base/storage/input-pvc.yaml` for input volume (read-only)
 - [ ] Create `k8s/base/storage/output-pvc.yaml` for output volume (read-write)
 - [ ] Create `k8s/base/storage/logs-pvc.yaml` for logs volume (read-write)
-- [ ] PVCs use StorageClass from Task 2.1
+- [ ] PVCs use StorageClass from Task 2.2
 - [ ] PVCs request appropriate storage size (e.g., 10Gi, adjust as needed)
 - [ ] `kubectl apply -f k8s/base/storage/` creates all PVCs
 - [ ] PVCs are bound and ready
@@ -249,11 +279,11 @@ Create PersistentVolumeClaims for input, output, and logs directories.
 
 ---
 
-### Task 2.3: Verify Volume Access and Permissions
+### Task 2.4: Verify Volume Access and Permissions
 **Type**: Infra  
 **Priority**: P1 (High)  
 **Effort**: ~1h  
-**Dependencies**: Task 2.2  
+**Dependencies**: Task 2.3  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -285,7 +315,7 @@ Test that volumes are accessible with correct permissions.
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
-**Dependencies**: Task 1.3, Task 1.4, Task 2.2  
+**Dependencies**: Task 1.2, Task 1.3, Task 1.5, Task 2.3  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -295,12 +325,12 @@ Convert ECS orchestrator task definition to Kubernetes Deployment.
 - [ ] Create `k8s/services/orchestrator/deployment.yaml`
 - [ ] Map CPU/memory from Terraform variables (512 CPU, 1024 MB memory)
 - [ ] Set initial replicas to 1 (from `desired_count`)
-- [ ] Configure image from ECR/GHCR (use same image as ECS)
+- [ ] Configure image from ECR (use same image as ECS)
 - [ ] Mount input-pvc at `/app/input` (read-only)
 - [ ] Set environment variables from ConfigMap and Secrets
 - [ ] Configure liveness probe: HTTP GET `/health` (interval: 30s, timeout: 10s, initialDelaySeconds: 5)
 - [ ] Configure readiness probe: HTTP GET `/health` (interval: 10s, timeout: 5s)
-- [ ] Set service account
+- [ ] Set service account with IRSA
 - [ ] `kubectl apply -f k8s/services/orchestrator/deployment.yaml` creates deployment
 - [ ] Pods start successfully and pass health checks
 
@@ -322,7 +352,7 @@ Convert ECS orchestrator task definition to Kubernetes Deployment.
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~3h  
-**Dependencies**: Task 1.3, Task 1.4  
+**Dependencies**: Task 1.2, Task 1.3, Task 1.5  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -333,10 +363,11 @@ Create Kubernetes Deployments for layering and wash-trading services.
 - [ ] Create `k8s/services/wash-trading/deployment.yaml`
 - [ ] Map CPU/memory from Terraform (512 CPU, 512 MB memory each)
 - [ ] Set initial replicas: layering=2, wash-trading=2 (from `desired_count`)
-- [ ] Configure images from ECR/GHCR
+- [ ] Configure images from ECR
 - [ ] Set environment variables from ConfigMap and Secrets
 - [ ] Configure liveness and readiness probes (same as orchestrator)
 - [ ] No persistent storage mounts (stateless services)
+- [ ] Set service accounts with IRSA
 - [ ] `kubectl apply` creates both deployments successfully
 - [ ] Pods start and pass health checks
 
@@ -347,6 +378,7 @@ Create Kubernetes Deployments for layering and wash-trading services.
 **Notes**:
 - Algorithm services are stateless (no volume mounts)
 - Can scale independently based on load
+- Can be created in parallel
 
 ---
 
@@ -354,7 +386,7 @@ Create Kubernetes Deployments for layering and wash-trading services.
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
-**Dependencies**: Task 1.3, Task 1.4, Task 2.2  
+**Dependencies**: Task 1.2, Task 1.3, Task 1.5, Task 2.3  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -364,11 +396,12 @@ Create Kubernetes Deployment for aggregator service.
 - [ ] Create `k8s/services/aggregator/deployment.yaml`
 - [ ] Map CPU/memory from Terraform (512 CPU, 512 MB memory)
 - [ ] Set initial replicas to 1 (from `desired_count`)
-- [ ] Configure image from ECR/GHCR
+- [ ] Configure image from ECR
 - [ ] Mount output-pvc at `/app/output` (read-write)
 - [ ] Mount logs-pvc at `/app/logs` (read-write)
 - [ ] Set environment variables from ConfigMap and Secrets (including PSEUDONYMIZATION_SALT)
 - [ ] Configure liveness and readiness probes
+- [ ] Set service account with IRSA
 - [ ] `kubectl apply` creates deployment successfully
 - [ ] Pods start and can write to volumes
 
@@ -411,23 +444,49 @@ Create ClusterIP services for internal service-to-service communication.
 **Notes**:
 - Service names must match URLs in orchestrator ConfigMap
 - DNS format: `http://<service-name>:<port>` (same namespace)
+- Services can be created in parallel
 
 ---
 
-### Task 3.5: Create Ingress Resource
+### Task 3.5: Install AWS Load Balancer Controller
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
-**Dependencies**: Task 3.4  
+**Dependencies**: Task 1.1, Task 1.2  
+**Status**: ⏳ Pending
+
+**Description**:
+Install AWS Load Balancer Controller in EKS cluster and configure IRSA for ALB management.
+
+**Acceptance Criteria**:
+- [ ] AWS Load Balancer Controller is installed in EKS cluster (or document installation steps)
+- [ ] Create IAM role for AWS Load Balancer Controller with ALB permissions
+- [ ] Configure IRSA for AWS Load Balancer Controller service account
+- [ ] Verify AWS Load Balancer Controller is running and healthy
+- [ ] Document installation and configuration process
+
+**Files to Create**:
+- `k8s/ingress/aws-load-balancer-controller-install.md` (installation instructions)
+
+**Notes**:
+- AWS Load Balancer Controller must be installed before creating Ingress
+- IRSA is required for controller to create/manage ALBs
+- Can use Helm chart: `helm install aws-load-balancer-controller eks/aws-load-balancer-controller`
+- Can be done in parallel with deployments (Task 3.1-3.3)
+
+---
+
+### Task 3.6: Create Ingress Resource
+**Type**: Infra  
+**Priority**: P0 (Critical)  
+**Effort**: ~2h  
+**Dependencies**: Task 3.4, Task 3.5  
 **Status**: ⏳ Pending
 
 **Description**:
 Replace ALB with Kubernetes Ingress resource using AWS Load Balancer Controller for external access.
 
 **Acceptance Criteria**:
-- [ ] AWS Load Balancer Controller is installed in EKS cluster (or document installation steps)
-- [ ] Create IAM role for AWS Load Balancer Controller with ALB permissions
-- [ ] Configure IRSA for AWS Load Balancer Controller service account
 - [ ] Create `k8s/ingress/ingress.yaml` with IngressClass annotation for AWS ALB
 - [ ] Route `/orchestrate*`, `/health`, `/` to orchestrator service
 - [ ] Optionally route other paths to respective services (if needed)
@@ -440,15 +499,12 @@ Replace ALB with Kubernetes Ingress resource using AWS Load Balancer Controller 
 
 **Files to Create**:
 - `k8s/ingress/ingress.yaml`
-- `k8s/ingress/aws-load-balancer-controller-install.md` (installation instructions)
 
 **Files to Review**:
 - `terraform/alb.tf` (ALB routing rules)
 
 **Notes**:
-- AWS Load Balancer Controller must be installed before creating Ingress
 - Controller automatically creates ALB when Ingress is created
-- IRSA required for controller to create/manage ALBs
 - For TLS, use cert-manager with ACM issuer (IRSA integration)
 - Start with HTTP in dev, add TLS for staging/prod
 
@@ -456,11 +512,37 @@ Replace ALB with Kubernetes Ingress resource using AWS Load Balancer Controller 
 
 ## Phase 4: Auto-Scaling
 
-### Task 4.1: Create HorizontalPodAutoscaler for All Services
+### Task 4.1: Install Metrics Server
+**Type**: Infra  
+**Priority**: P0 (Critical)  
+**Effort**: ~1h  
+**Dependencies**: Task 1.1  
+**Status**: ⏳ Pending
+
+**Description**:
+Install Metrics Server in EKS cluster for HPA to function.
+
+**Acceptance Criteria**:
+- [ ] Metrics server is installed in EKS cluster (or document installation steps)
+- [ ] Verify Metrics Server is running and healthy
+- [ ] Verify `kubectl top nodes` and `kubectl top pods` commands work
+- [ ] Document installation process
+
+**Files to Create**:
+- `k8s/monitoring/metrics-server-install.md` (installation instructions)
+
+**Notes**:
+- Metrics Server must be installed before creating HPA
+- Can be installed via EKS add-on or manually
+- Can be done in parallel with deployments
+
+---
+
+### Task 4.2: Create HorizontalPodAutoscaler for All Services
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~2h  
-**Dependencies**: Task 3.1, Task 3.2, Task 3.3  
+**Dependencies**: Task 3.1, Task 3.2, Task 3.3, Task 4.1  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -477,7 +559,6 @@ Replace ECS auto-scaling with Kubernetes HorizontalPodAutoscaler (HPA).
 - [ ] Set max replicas from `max_capacity` variable (orchestrator: 5, layering: 10, wash-trading: 10, aggregator: 5)
 - [ ] Configure scale-down stabilization: 5 minutes (300s)
 - [ ] Configure scale-up stabilization: 1 minute (60s)
-- [ ] Metrics server is installed and working
 - [ ] `kubectl apply` creates all HPAs successfully
 - [ ] HPAs scale pods based on CPU/memory utilization
 
@@ -492,23 +573,23 @@ Replace ECS auto-scaling with Kubernetes HorizontalPodAutoscaler (HPA).
 - `terraform/variables.tf` (min/max capacity)
 
 **Notes**:
-- Metrics server must be installed for HPA to work
 - HPA requires resource requests/limits to be set in deployments
 - Test scaling by generating load
+- HPAs can be created in parallel
 
 ---
 
 ## Phase 5: Monitoring & Logging
 
-### Task 5.1: Set Up Logging (CloudWatch or Native)
+### Task 5.1: Install and Configure Fluent Bit
 **Type**: Infra  
 **Priority**: P1 (High)  
 **Effort**: ~3h  
-**Dependencies**: Task 3.1, Task 3.2, Task 3.3  
+**Dependencies**: Task 1.2  
 **Status**: ⏳ Pending
 
 **Description**:
-Configure Fluent Bit DaemonSet to collect logs and send to CloudWatch Logs via IRSA.
+Install Fluent Bit DaemonSet and configure it to send logs to CloudWatch Logs via IRSA.
 
 **Acceptance Criteria**:
 - [ ] Install Fluent Bit DaemonSet in EKS cluster
@@ -535,13 +616,14 @@ Configure Fluent Bit DaemonSet to collect logs and send to CloudWatch Logs via I
 - Fluent Bit uses IRSA to write to CloudWatch Logs (no long-lived credentials)
 - Reuse existing CloudWatch Log Groups from ECS for consistency
 - Fluent Bit is lightweight and efficient for log collection
+- Can be installed after deployments are running
 
 ---
 
-### Task 5.2: Set Up Metrics Collection
+### Task 5.2: Enable CloudWatch Container Insights
 **Type**: Infra  
 **Priority**: P1 (High)  
-**Effort**: ~3h  
+**Effort**: ~2h  
 **Dependencies**: Task 3.1, Task 3.2, Task 3.3  
 **Status**: ⏳ Pending
 
@@ -585,8 +667,7 @@ Replicate CloudWatch alarms in Kubernetes monitoring system.
 
 **Acceptance Criteria**:
 - [ ] Review `terraform/monitoring.tf` for alarm definitions
-- [ ] Create PrometheusAlertManager rules (if using Prometheus)
-- [ ] Or configure CloudWatch alarms for K8s metrics (if using CloudWatch)
+- [ ] Create CloudWatch alarms for K8s metrics
 - [ ] Alarms for high CPU (threshold: 80%)
 - [ ] Alarms for high memory (threshold: 85%)
 - [ ] Alarms for low pod count (threshold: < 1)
@@ -594,8 +675,7 @@ Replicate CloudWatch alarms in Kubernetes monitoring system.
 - [ ] Test alarms by generating load
 
 **Files to Create**:
-- `k8s/monitoring/alerts.yaml` (if using Prometheus)
-- `k8s/monitoring/cloudwatch-alarms.yaml` (if using CloudWatch)
+- `k8s/monitoring/cloudwatch-alarms.yaml` (CloudWatch alarm definitions)
 
 **Files to Review**:
 - `terraform/monitoring.tf` (alarm definitions)
@@ -603,16 +683,55 @@ Replicate CloudWatch alarms in Kubernetes monitoring system.
 **Notes**:
 - Match alarm thresholds from ECS CloudWatch alarms
 - Configure alerting channels appropriately
+- Can use Terraform or AWS Console to create alarms
 
 ---
 
 ## Phase 6: CI/CD Updates
 
-### Task 6.1: Update GitHub Actions for K8s Deployment
+### Task 6.1: Create Environment-Specific Overlays
+**Type**: Infra  
+**Priority**: P1 (High)  
+**Effort**: ~2h  
+**Dependencies**: Task 1.1  
+**Status**: ⏳ Pending
+
+**Description**:
+Create Kustomize overlays for dev/staging/prod environments with separate namespaces.
+
+**Acceptance Criteria**:
+- [ ] Create `k8s/overlays/dev/` with dev-specific configs
+- [ ] Create `k8s/overlays/staging/` with staging-specific configs
+- [ ] Create `k8s/overlays/prod/` with prod-specific configs
+- [ ] Each overlay sets namespace: `layering-detection-dev`, `layering-detection-staging`, `layering-detection-prod`
+- [ ] Overlays customize replica counts, resource limits, or configs per environment
+- [ ] Dev: Lower replica counts, smaller resource limits
+- [ ] Staging: Similar to prod but with test data
+- [ ] Prod: Full replica counts and resource limits
+- [ ] Document overlay usage and namespace strategy
+
+**Files to Create**:
+- `k8s/overlays/dev/kustomization.yaml`
+- `k8s/overlays/dev/namespace.yaml` (if namespace not in base)
+- `k8s/overlays/staging/kustomization.yaml`
+- `k8s/overlays/staging/namespace.yaml`
+- `k8s/overlays/prod/kustomization.yaml`
+- `k8s/overlays/prod/namespace.yaml`
+
+**Notes**:
+- Kustomize overlays allow environment-specific customization
+- Separate namespaces provide isolation between environments
+- Single cluster with multiple namespaces is cost-effective
+- Can customize any resource (replicas, limits, configs) per environment
+- Can be created early, used later in CI/CD
+
+---
+
+### Task 6.2: Update GitHub Actions for K8s Deployment
 **Type**: Infra  
 **Priority**: P0 (Critical)  
 **Effort**: ~3h  
-**Dependencies**: All previous phases  
+**Dependencies**: All previous phases (Task 3.6, Task 4.2, Task 6.1)  
 **Status**: ⏳ Pending
 
 **Description**:
@@ -644,44 +763,6 @@ Update GitHub Actions workflow to deploy to EKS cluster after image build. Use E
 - Or use GitHub Secrets for kubeconfig (less secure)
 - Kustomize overlays allow environment-specific customization
 - Image tags should use commit SHA or semantic versioning
-
----
-
-### Task 6.2: Create Environment-Specific Overlays
-**Type**: Infra  
-**Priority**: P1 (High)  
-**Effort**: ~2h  
-**Dependencies**: Task 6.1  
-**Status**: ⏳ Pending
-
-**Description**:
-Create Kustomize overlays for dev/staging/prod environments with separate namespaces.
-
-**Acceptance Criteria**:
-- [ ] Create `k8s/overlays/dev/` with dev-specific configs
-- [ ] Create `k8s/overlays/staging/` with staging-specific configs
-- [ ] Create `k8s/overlays/prod/` with prod-specific configs
-- [ ] Each overlay sets namespace: `layering-detection-dev`, `layering-detection-staging`, `layering-detection-prod`
-- [ ] Overlays customize replica counts, resource limits, or configs per environment
-- [ ] Dev: Lower replica counts, smaller resource limits
-- [ ] Staging: Similar to prod but with test data
-- [ ] Prod: Full replica counts and resource limits
-- [ ] CI/CD uses appropriate overlay based on branch/environment
-- [ ] Document overlay usage and namespace strategy
-
-**Files to Create**:
-- `k8s/overlays/dev/kustomization.yaml`
-- `k8s/overlays/dev/namespace.yaml` (if namespace not in base)
-- `k8s/overlays/staging/kustomization.yaml`
-- `k8s/overlays/staging/namespace.yaml`
-- `k8s/overlays/prod/kustomization.yaml`
-- `k8s/overlays/prod/namespace.yaml`
-
-**Notes**:
-- Kustomize overlays allow environment-specific customization
-- Separate namespaces provide isolation between environments
-- Single cluster with multiple namespaces is cost-effective
-- Can customize any resource (replicas, limits, configs) per environment
 
 ---
 
@@ -770,60 +851,100 @@ Test rollback procedure to ECS if needed.
 
 ### Task Count by Phase
 
-- **Phase 1 (Core Resources)**: 4 tasks
-- **Phase 2 (Storage)**: 3 tasks
-- **Phase 3 (Deployments & Services)**: 5 tasks
-- **Phase 4 (Auto-Scaling)**: 1 task
+- **Phase 1 (Foundation)**: 5 tasks
+- **Phase 2 (Storage)**: 4 tasks
+- **Phase 3 (Deployments & Services)**: 6 tasks
+- **Phase 4 (Auto-Scaling)**: 2 tasks
 - **Phase 5 (Monitoring & Logging)**: 3 tasks
 - **Phase 6 (CI/CD)**: 2 tasks
 - **Phase 7 (Testing & Validation)**: 3 tasks
 
-**Total**: 21 tasks
+**Total**: 25 tasks
 
 ### Estimated Effort
 
-- **Phase 1**: ~5.5 hours
-- **Phase 2**: ~5 hours
-- **Phase 3**: ~10 hours
-- **Phase 4**: ~2 hours
-- **Phase 5**: ~8 hours
+- **Phase 1**: ~9 hours
+- **Phase 2**: ~6 hours
+- **Phase 3**: ~12 hours
+- **Phase 4**: ~3 hours
+- **Phase 5**: ~7 hours
 - **Phase 6**: ~5 hours
 - **Phase 7**: ~9 hours
 
-**Total**: ~44.5 hours (~5-6 days for one developer)
+**Total**: ~51 hours (~6-7 days for one developer)
 
 ### Critical Path
 
-1. Core Resources (Tasks 1.1-1.4) → All services depend on this
-2. Storage (Tasks 2.1-2.3) → Deployments need volumes
-3. Deployments & Services (Tasks 3.1-3.5) → Core functionality
-4. Auto-Scaling (Task 4.1) → Production readiness
-5. CI/CD (Tasks 6.1-6.2) → Deployment automation
-6. Testing (Tasks 7.1-7.3) → Validation
+1. **Foundation** (Tasks 1.1-1.5) → All services depend on this
+2. **Storage** (Tasks 2.1-2.3) → Deployments need volumes
+3. **Deployments** (Tasks 3.1-3.3) → Services depend on deployments
+4. **Services** (Task 3.4) → Ingress depends on services
+5. **Ingress** (Task 3.6) → External access
+6. **HPA** (Task 4.2) → Auto-scaling
+7. **CI/CD** (Task 6.2) → Deployment automation
+8. **Testing** (Tasks 7.1-7.3) → Validation
 
 ### Parallelization Opportunities
 
-- **Phase 1**: ConfigMaps and Secrets can be created in parallel
-- **Phase 2**: All PVCs can be created in parallel
-- **Phase 3**: All service deployments can be created in parallel (after base resources)
-- **Phase 5**: Logging and metrics can be set up in parallel
+- **Phase 1**: ConfigMaps (Task 1.3) and External Secrets Operator setup (Task 1.4) can be done in parallel
+- **Phase 2**: All PVCs (Task 2.3) can be created in parallel
+- **Phase 3**: All service deployments (Tasks 3.1-3.3) can be created in parallel (after base resources)
+- **Phase 3**: AWS Load Balancer Controller (Task 3.5) can be installed in parallel with deployments
+- **Phase 4**: All HPAs (Task 4.2) can be created in parallel
+- **Phase 5**: Fluent Bit (Task 5.1) and Container Insights (Task 5.2) can be set up in parallel
+
+### Dependency Graph
+
+```
+1.1 (Directory Structure)
+  ├─> 1.2 (Namespaces/Service Accounts)
+  │   ├─> 1.4 (External Secrets Operator)
+  │   │   └─> 1.5 (ExternalSecrets)
+  │   └─> 5.1 (Fluent Bit)
+  ├─> 1.3 (ConfigMaps)
+  ├─> 2.1 (EFS CSI Driver)
+  │   └─> 2.2 (StorageClass)
+  │       └─> 2.3 (PVCs)
+  │           └─> 2.4 (Volume Testing)
+  ├─> 3.5 (AWS Load Balancer Controller)
+  │   └─> 3.6 (Ingress)
+  └─> 4.1 (Metrics Server)
+      └─> 4.2 (HPA)
+
+1.2, 1.3, 1.5, 2.3 ──> 3.1 (Orchestrator Deployment)
+1.2, 1.3, 1.5 ──────> 3.2 (Algorithm Deployments)
+1.2, 1.3, 1.5, 2.3 ──> 3.3 (Aggregator Deployment)
+
+3.1, 3.2, 3.3 ──────> 3.4 (Services)
+3.4, 3.5 ──────────> 3.6 (Ingress)
+
+3.1, 3.2, 3.3, 4.1 ──> 4.2 (HPA)
+
+3.1, 3.2, 3.3 ──────> 5.2 (Container Insights)
+5.2 ────────────────> 5.3 (Alarms)
+
+All Phases 1-5 ──────> 6.2 (CI/CD)
+All Phases 1-6 ──────> 7.1 (E2E Testing)
+7.1 ────────────────> 7.2 (Performance Testing)
+7.1 ────────────────> 7.3 (Rollback Testing)
+```
 
 ### Risk Mitigation
 
-- **High Risk**: Storage migration (Task 2.1-2.3) - test thoroughly with existing data
-- **Medium Risk**: Ingress configuration (Task 3.5) - ensure external access works
-- **Low Risk**: ConfigMaps/Secrets (Tasks 1.3-1.4) - straightforward conversion
+- **High Risk**: Storage migration (Tasks 2.1-2.4) - test thoroughly with existing data
+- **Medium Risk**: Ingress configuration (Task 3.6) - ensure external access works
+- **Low Risk**: ConfigMaps/Secrets (Tasks 1.3-1.5) - straightforward conversion
 
 ### Dependencies & Prerequisites
 
 **Before Starting**:
 - **AWS EKS cluster** (Kubernetes 1.24+) with IRSA enabled
 - `kubectl` configured with EKS cluster access
-- **AWS Load Balancer Controller** installed
-- **EFS CSI driver** installed
-- **Metrics server** installed (for HPA)
-- **External Secrets Operator** installed
-- **Fluent Bit** DaemonSet installed (for CloudWatch logging)
+- **AWS Load Balancer Controller** installed (Task 3.5)
+- **EFS CSI driver** installed (Task 2.1)
+- **Metrics server** installed (Task 4.1)
+- **External Secrets Operator** installed (Task 1.4)
+- **Fluent Bit** DaemonSet installed (Task 5.1)
 - **ECR access** configured (IRSA for service accounts)
 - Existing **EFS file system** (reuse from ECS)
 - Existing **Secrets Manager secrets** (API_KEY, PSEUDONYMIZATION_SALT)
