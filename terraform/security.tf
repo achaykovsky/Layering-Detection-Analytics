@@ -1,11 +1,18 @@
 # Security Groups and IAM Roles
 
-# Security Group for ALB
+# Security Group for ALB. Restrict allowed_cidr_blocks in production (see variables.tf default and terraform.tfvars.example).
 resource "aws_security_group" "alb" {
   count       = var.enable_alb ? 1 : 0
   name        = "${var.app_name}-alb-sg"
   description = "Security group for Application Load Balancer"
   vpc_id      = aws_vpc.main.id
+
+  lifecycle {
+    precondition {
+      condition     = var.environment != "prod" || !contains(var.allowed_cidr_blocks, "0.0.0.0/0")
+      error_message = "allowed_cidr_blocks must not contain 0.0.0.0/0 when environment is prod; use specific CIDRs (e.g. office/VPN IPs). See terraform.tfvars.example."
+    }
+  }
 
   ingress {
     description = "HTTP"
@@ -167,7 +174,7 @@ resource "aws_iam_role" "ecs_task" {
   }
 }
 
-# IAM Policy for EFS access (if enabled)
+# IAM Policy for EFS access (if enabled). Orchestrator uses input; aggregator uses output and logs.
 resource "aws_iam_role_policy" "ecs_efs" {
   count = var.enable_efs ? 1 : 0
   name  = "${var.app_name}-ecs-efs-policy"
@@ -187,6 +194,34 @@ resource "aws_iam_role_policy" "ecs_efs" {
         Condition = {
           StringEquals = {
             "elasticfilesystem:AccessPointArn" = aws_efs_access_point.input[0].arn
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ]
+        Resource = aws_efs_file_system.main[0].arn
+        Condition = {
+          StringEquals = {
+            "elasticfilesystem:AccessPointArn" = aws_efs_access_point.output[0].arn
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ]
+        Resource = aws_efs_file_system.main[0].arn
+        Condition = {
+          StringEquals = {
+            "elasticfilesystem:AccessPointArn" = aws_efs_access_point.logs[0].arn
           }
         }
       }
